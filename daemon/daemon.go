@@ -35,7 +35,6 @@ import (
 	"github.com/cilium/cilium/common"
 	"github.com/cilium/cilium/common/addressing"
 	"github.com/cilium/cilium/common/ipam"
-	"github.com/cilium/cilium/common/types"
 	"github.com/cilium/cilium/daemon/defaults"
 	"github.com/cilium/cilium/daemon/options"
 	"github.com/cilium/cilium/pkg/apierror"
@@ -46,6 +45,7 @@ import (
 	"github.com/cilium/cilium/pkg/events"
 	"github.com/cilium/cilium/pkg/k8s"
 	"github.com/cilium/cilium/pkg/labels"
+	"github.com/cilium/cilium/pkg/lb"
 	"github.com/cilium/cilium/pkg/maps/ctmap"
 	"github.com/cilium/cilium/pkg/maps/lbmap"
 	"github.com/cilium/cilium/pkg/maps/lxcmap"
@@ -81,7 +81,8 @@ type Daemon struct {
 	ipamConf          *ipam.IPAMConfig
 	k8sClient         *kubernetes.Clientset
 	l7Proxy           *proxy.Proxy
-	loadBalancer      *types.LoadBalancer
+	loadBalancer      *lb.Configuration
+	k8sState          *k8s.State
 	loopbackIPv4      net.IP
 	policy            *policy.Repository
 
@@ -566,20 +567,20 @@ func NewDaemon(c *Config) (*Daemon, error) {
 		return nil, err
 	}
 
-	lb := types.NewLoadBalancer()
-
 	d := Daemon{
 		conf:              c,
 		dockerClient:      dockerClient,
 		containers:        make(map[string]*container.Container),
 		events:            make(chan events.Event, 512),
-		loadBalancer:      lb,
 		consumableCache:   policy.NewConsumableCache(),
 		policy:            policy.NewPolicyRepository(),
 		ignoredContainers: make(map[string]int),
 		buildEndpointChan: make(chan *endpoint.Request, common.EndpointsPerHost),
 		uniqueID:          map[uint64]bool{},
 	}
+
+	d.loadBalancer = lb.NewConfiguration(&d)
+	d.k8sState = k8s.NewState(d.loadBalancer)
 
 	// Create the same amount of worker threads as there are CPUs
 	d.StartEndpointBuilders(runtime.NumCPU())

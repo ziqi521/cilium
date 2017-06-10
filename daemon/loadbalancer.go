@@ -22,11 +22,235 @@ import (
 	"github.com/cilium/cilium/common/types"
 	"github.com/cilium/cilium/pkg/apierror"
 	"github.com/cilium/cilium/pkg/bpf"
+	"github.com/cilium/cilium/pkg/k8s"
+	"github.com/cilium/cilium/pkg/lb"
 	"github.com/cilium/cilium/pkg/maps/lbmap"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/go-openapi/runtime/middleware"
 )
+
+func addIngress() {
+	var host net.IP
+	if d.conf.IPv4Disabled {
+		host = d.conf.HostV6Addr
+	} else {
+		host = d.conf.HostV4Addr
+	}
+	ingressSvcInfo := types.NewK8sServiceInfo(host)
+	ingressSvcInfo.Ports[types.FEPortName(ingress.Spec.Backend.ServicePort.StrVal)] = fePort
+
+	syncIngress := func(ingressSvcInfo *types.K8sServiceInfo) error {
+		d.loadBalancer.K8sIngress[svcName] = ingressSvcInfo
+
+		if err := d.syncExternalLB(&svcName, nil, nil); err != nil {
+			return fmt.Errorf("Unable to add ingress service %s: %s", svcName, err)
+		}
+		return nil
+	}
+}
+
+func modIngress() {
+	// Add RevNAT to the BPF Map for non-LB nodes when a LB node update the
+	// ingress status with its address.
+	if !d.conf.IsLBEnabled() {
+		port := newIngress.Spec.Backend.ServicePort.IntValue()
+		for _, loadbalancer := range newIngress.Status.LoadBalancer.Ingress {
+			ingressIP := net.ParseIP(loadbalancer.IP)
+			if ingressIP == nil {
+				continue
+			}
+			feAddr, err := types.NewL3n4Addr(types.TCP, ingressIP, uint16(port))
+			if err != nil {
+				log.Errorf("Error while creating a new L3n4Addr: %s. Ignoring ingress %s/%s...", err, newIngress.Namespace, newIngress.Name)
+				continue
+			}
+			feAddrID, err := d.PutL3n4Addr(*feAddr, 0)
+			if err != nil {
+				log.Errorf("Error while getting a new service ID: %s. Ignoring ingress %s/%s...", err, newIngress.Namespace, newIngress.Name)
+				continue
+			}
+			log.Debugf("Got service ID %d for ingress %s/%s", feAddrID.ID, newIngress.Namespace, newIngress.Name)
+
+			if err := d.RevNATAdd(feAddrID.ID, feAddrID.L3n4Addr); err != nil {
+				log.Errorf("Unable to add reverse NAT ID for ingress %s/%s: %s", newIngress.Namespace, newIngress.Name, err)
+			}
+		}
+		return
+	}
+
+	if oldIngress.Spec.Backend.ServiceName == newIngress.Spec.Backend.ServiceName &&
+		oldIngress.Spec.Backend.ServicePort == newIngress.Spec.Backend.ServicePort {
+		return
+	}
+
+	d.ingressAddFn(newObj)
+}
+
+func deleteIngress() {
+	// Remove RevNAT from the BPF Map for non-LB nodes.
+	if !d.conf.IsLBEnabled() {
+		port := ing.Spec.Backend.ServicePort.IntValue()
+		for _, loadbalancer := range ing.Status.LoadBalancer.Ingress {
+			ingressIP := net.ParseIP(loadbalancer.IP)
+			if ingressIP == nil {
+				continue
+			}
+			feAddr, err := types.NewL3n4Addr(types.TCP, ingressIP, uint16(port))
+			if err != nil {
+				log.Errorf("Error while creating a new L3n4Addr: %s. Ignoring ingress %s/%s...", err, ing.Namespace, ing.Name)
+				continue
+			}
+			// This is the only way that we can get the service's ID
+			// without accessing the KVStore.
+			svc := d.svcGetBySHA256Sum(feAddr.SHA256Sum())
+			if svc != nil {
+				if err := d.RevNATDelete(svc.FE.ID); err != nil {
+					log.Errorf("Error while removing RevNAT for ID %d for ingress %s/%s: %s", svc.FE.ID, ing.Namespace, ing.Name, err)
+				}
+			}
+		}
+		return
+	}
+
+	d.loadBalancer.K8sMU.Lock()
+	defer d.loadBalancer.K8sMU.Unlock()
+
+	ingressSvcInfo, ok := d.loadBalancer.K8sIngress[svcName]
+	if !ok {
+		return
+	}
+
+	// Get all active endpoints for the service specified in ingress
+	k8sEP, ok := d.loadBalancer.K8sEndpoints[svcName]
+	if !ok {
+		return
+	}
+
+	err := d.delK8sSVCs(svcName, ingressSvcInfo, k8sEP)
+	if err != nil {
+		log.Errorf("Unable to delete K8s ingress: %s", err)
+		return
+	}
+	delete(d.loadBalancer.K8sIngress, svcName)
+}
+
+func (lb *LoadBalancer) syncDatapath() {
+}
+
+func (lb *LoadBalancer) Sync() {
+	if !d.conf.IsLBEnabled() {
+		// Add operations don't matter to non-LB nodes.
+		return
+	}
+
+	deleteSN := func(delSN k8sServiceID) {
+		svc, ok := d.loadBalancer.K8sServices[delSN]
+		if !ok {
+			delete(d.loadBalancer.K8sEndpoints, delSN)
+			return
+		}
+
+		endpoint, ok := d.loadBalancer.K8sEndpoints[delSN]
+		if !ok {
+			delete(d.loadBalancer.K8sServices, delSN)
+			return
+		}
+
+		if err := d.delK8sSVCs(svc, endpoint); err != nil {
+			log.Errorf("Unable to delete k8s service: %s", err)
+			return
+		}
+
+		delete(d.loadBalancer.K8sServices, delSN)
+		delete(d.loadBalancer.K8sEndpoints, delSN)
+	}
+
+	addSN := func(addSN k8s.ServiceID) {
+		svcInfo, ok := d.loadBalancer.K8sServices[addSN]
+		if !ok {
+			return
+		}
+
+		endpoint, ok := d.loadBalancer.K8sEndpoints[addSN]
+		if !ok {
+			return
+		}
+
+		if err := d.addK8sSVCs(addSN, svcInfo, endpoint); err != nil {
+			log.Errorf("Unable to add K8s service: %s", err)
+		}
+	}
+
+	if delSN != nil {
+		// Clean old services
+		deleteSN(*delSN)
+	}
+	if newSN != nil {
+		// Add new services
+		addSN(*newSN)
+	}
+
+	if d.conf.IsLBEnabled() {
+		if err := d.syncExternalLB(&endpoints.ID, nil, nil); err != nil {
+			log.Errorf("Unable to add endpoints on ingress service %s: %s", id, err)
+			return
+		}
+	}
+}
+
+func (d *Daemon) syncExternalLB(newSN, modSN, delSN *k8s.ServiceID) error {
+	deleteSN := func(delSN k8s.ServiceID) error {
+		ingSvc, ok := d.loadBalancer.K8sIngress[delSN]
+		if !ok {
+			return nil
+		}
+
+		endpoint, ok := d.loadBalancer.K8sEndpoints[delSN]
+		if !ok {
+			return nil
+		}
+
+		if err := d.delK8sSVCs(delSN, ingSvc, endpoint); err != nil {
+			return err
+		}
+
+		delete(d.loadBalancer.K8sServices, delSN)
+		return nil
+	}
+
+	addSN := func(addSN k8s.ServiceID) error {
+		ingressSvcInfo, ok := d.loadBalancer.K8sIngress[addSN]
+		if !ok {
+			return nil
+		}
+
+		k8sEP, ok := d.loadBalancer.K8sEndpoints[addSN]
+		if !ok {
+			return nil
+		}
+
+		err := d.addK8sSVCs(addSN, ingressSvcInfo, k8sEP)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	if delSN != nil {
+		// Clean old services
+		return deleteSN(*delSN)
+	}
+	if modSN != nil {
+		// Re-add modified services
+		return addSN(*modSN)
+	}
+	if newSN != nil {
+		// Add new services
+		return addSN(*newSN)
+	}
+	return nil
+}
 
 // addSVC2BPFMap adds the given bpf service to the bpf maps. If addRevNAT is set, adds the
 // RevNAT value (feCilium.L3n4Addr) to the lb's RevNAT map for the given feCilium.ID.
@@ -81,6 +305,20 @@ func (d *Daemon) SVCAdd(feL3n4Addr types.L3n4AddrID, be []types.LBBackEnd, addRe
 	return d.svcAdd(feL3n4Addr, be, addRevNAT)
 }
 
+func (d *Daemon) AddOrReplaceService(svc Service) error {
+	// Convert service to lbmap.ServiceKey and []lbmap.ServiceValue
+	fe, besValues, err := lbmap.LBSVC2ServiceKeynValue(svc)
+	if err != nil {
+		return err
+	}
+
+	d.BPFMapMU.Lock()
+	defer d.BPFMapMU.Unlock()
+
+	return d.addSVC2BPFMap(svc.Frontend.GetL3n4Addr(), fe, besValues,
+		svc.config.EnableRevNAT)
+}
+
 // svcAdd adds a service from the given feL3n4Addr (frontend) and LBBackEnd (backends).
 // If addRevNAT is set, the RevNAT entry is also created for this particular service.
 // If any of the backend addresses set in bes have a different L3 address type than the
@@ -115,7 +353,7 @@ func (d *Daemon) svcAdd(feL3n4Addr types.L3n4AddrID, bes []types.LBBackEnd, addR
 		return false, err
 	}
 
-	return d.loadBalancer.AddService(svc), nil
+	return d.loadBalancer.AddOrReplaceService(svc), nil
 }
 
 type putServiceID struct {
@@ -545,5 +783,81 @@ func (d *Daemon) SyncLBMap() error {
 	d.loadBalancer.SVCMapID = newSVCMapID
 	d.loadBalancer.RevNATMap = newRevNATMap
 
+	return nil
+}
+
+func getUniqPorts(svcPorts map[types.FEPortName]*types.FEPort) map[uint16]bool {
+	// We are not discriminating the different L4 protocols on the same L4
+	// port so we create the number of unique sets of service IP + service
+	// port.
+	uniqPorts := map[uint16]bool{}
+	for _, svcPort := range svcPorts {
+		uniqPorts[svcPort.Port] = true
+	}
+	return uniqPorts
+}
+
+func (d *Daemon) delK8sSVCs(id k8s.K8sServiceID, svc k8s.K8sService, se *types.K8sServiceEndpoint) error {
+	isSvcIPv4 := svcInfo.FEIP.To4() != nil
+	if err := areIPsConsistent(!d.conf.IPv4Disabled, isSvcIPv4, id, se); err != nil {
+		return err
+	}
+
+	repPorts := getUniqPorts(svcInfo.Ports)
+
+	for _, svcPort := range svcInfo.Ports {
+		if !repPorts[svcPort.Port] {
+			continue
+		}
+		repPorts[svcPort.Port] = false
+
+		if svcPort.ID != 0 {
+			if err := d.DeleteL3n4AddrIDByUUID(uint32(svcPort.ID)); err != nil {
+				log.Warningf("Error while cleaning service ID: %s", err)
+			}
+		}
+
+		fe, err := types.NewL3n4Addr(svcPort.Protocol, svcInfo.FEIP, svcPort.Port)
+		if err != nil {
+			log.Errorf("Error while creating a New L3n4AddrID: %s. Ignoring service %v...", err, svcInfo)
+			continue
+		}
+
+		if err := d.svcDeleteByFrontend(fe); err != nil {
+			log.Warningf("Error deleting service %+v, %s", fe, err)
+		} else {
+			log.Debugf("# cilium lb delete-service %s %d 0", svcInfo.FEIP, svcPort.Port)
+		}
+
+		if err := d.RevNATDelete(svcPort.ID); err != nil {
+			log.Warningf("Error deleting reverse NAT %+v, %s", svcPort.ID, err)
+		} else {
+			log.Debugf("# cilium lb delete-rev-nat %d", svcPort.ID)
+		}
+	}
+	return nil
+}
+
+func areIPsConsistent(ipv4Enabled, isSvcIPv4 bool, svc k8s.K8sServiceID, se *types.K8sServiceEndpoint) error {
+	if isSvcIPv4 {
+		if !ipv4Enabled {
+			return fmt.Errorf("Received an IPv4 kubernetes service but IPv4 is "+
+				"disabled in the cilium daemon. Ignoring service %+v", svc)
+		}
+
+		for epIP := range se.BEIPs {
+			//is IPv6?
+			if net.ParseIP(epIP).To4() == nil {
+				return fmt.Errorf("Not all endpoints IPs are IPv4. Ignoring IPv4 service %+v", svc)
+			}
+		}
+	} else {
+		for epIP := range se.BEIPs {
+			//is IPv4?
+			if net.ParseIP(epIP).To4() != nil {
+				return fmt.Errorf("Not all endpoints IPs are IPv6. Ignoring IPv6 service %+v", svc)
+			}
+		}
+	}
 	return nil
 }

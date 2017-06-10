@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+// FIXME: Cleanup this file
+
+package lb
 
 import (
 	"encoding/json"
@@ -26,66 +28,88 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
-func updateL3n4AddrIDRef(id types.ServiceID, l3n4AddrID types.L3n4AddrID) error {
-	key := path.Join(common.ServiceIDKeyPath, strconv.FormatUint(uint64(id), 10))
-	return kvstore.Client.SetValue(key, l3n4AddrID)
+type FrontendID struct {
+	Frontend
+	ID ServiceID
+}
+
+func (f *FrontendID) GetL3n4AddrID() types.L3n4AddrID {
+	return types.L3n4AddrID{
+		L3n4Addr: types.L3n4Addr{
+			IP: f.IP,
+			L4Addr: types.L4Addr{
+				Protocol: types.L4Type(f.Protocol),
+				Port:     f.Port,
+			},
+		},
+		ID: f.ID,
+	}
+}
+
+func getMaxServiceID() (uint32, error) {
+	return kvstore.Client.GetMaxID(common.LastFreeServiceIDKeyPath, common.FirstFreeServiceID)
 }
 
 // gasNewL3n4AddrID gets and sets a new L3n4Addr ID. If baseID is different than zero,
 // KVStore tries to assign that ID first.
-func gasNewL3n4AddrID(l3n4AddrID *types.L3n4AddrID, baseID uint32) error {
+func gasNewL3n4AddrID(f *FrontendID, baseID uint32) error {
 	if baseID == 0 {
 		var err error
-		baseID, err = GetMaxServiceID()
+		baseID, err = getMaxServiceID()
 		if err != nil {
 			return err
 		}
 	}
 
-	return kvstore.Client.GASNewL3n4AddrID(common.ServiceIDKeyPath, baseID, l3n4AddrID)
+	addr := f.GetL3n4AddrID()
+
+	return kvstore.Client.GASNewL3n4AddrID(common.ServiceIDKeyPath, baseID, addr)
 }
 
-// PutL3n4Addr stores the given service in the kvstore and returns the L3n4AddrID
-// created for the given l3n4Addr. If baseID is different than 0, it tries to acquire that
-// ID to the l3n4Addr.
-func PutL3n4Addr(l3n4Addr types.L3n4Addr, baseID uint32) (*types.L3n4AddrID, error) {
-	log.Debugf("Resolving service %+v", l3n4Addr)
+func acquireGlobalID(f Frontend, baseID int) (ServiceID, error) {
+	log.Debugf("Resolving service %+v", f)
 
-	// Retrieve unique SHA256Sum for service
-	sha256Sum := l3n4Addr.SHA256Sum()
+	sha256Sum := f.SHA256Sum()
 	svcPath := path.Join(common.ServicesKeyPath, sha256Sum)
 
 	// Lock that sha256Sum
 	lockKey, err := kvstore.Client.LockPath(svcPath)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	defer lockKey.Unlock()
 
 	// After lock complete, get svc's path
 	rmsg, err := kvstore.Client.GetValue(svcPath)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 
-	sl4KV := types.L3n4AddrID{}
+	sl4KV := FrontendID{}
 	if rmsg != nil {
 		if err := json.Unmarshal(rmsg, &sl4KV); err != nil {
-			return nil, err
+			return 0, err
 		}
 	}
 	if sl4KV.ID == 0 {
-		sl4KV.L3n4Addr = l3n4Addr
-		if err := gasNewL3n4AddrID(&sl4KV, baseID); err != nil {
-			return nil, err
+		sl4KV.L3n4Addr = Frontend
+		if err := gasNewL3n4AddrID(&sl4KV, 0); err != nil {
+			return 0, err
 		}
-		err = kvstore.Client.SetValue(svcPath, sl4KV)
+		if err = kvstore.Client.SetValue(svcPath, sl4KV); err != nil {
+			return 0, err
+		}
 	}
 
-	return &sl4KV, err
+	return sl4KV.ID, err
 }
 
-func getL3n4AddrID(keyPath string) (*types.L3n4AddrID, error) {
+func updateL3n4AddrIDRef(id ServiceID, FrontendID FrontendID) error {
+	key := path.Join(common.ServiceIDKeyPath, strconv.FormatUint(uint64(id), 10))
+	return kvstore.Client.SetValue(key, FrontendID)
+}
+
+func getL3n4AddrID(keyPath string) (*FrontendID, error) {
 	rmsg, err := kvstore.Client.GetValue(keyPath)
 	if err != nil {
 		return nil, err
@@ -94,35 +118,35 @@ func getL3n4AddrID(keyPath string) (*types.L3n4AddrID, error) {
 		return nil, nil
 	}
 
-	var l3n4AddrID types.L3n4AddrID
-	if err := json.Unmarshal(rmsg, &l3n4AddrID); err != nil || l3n4AddrID.ID == 0 {
+	var FrontendID FrontendID
+	if err := json.Unmarshal(rmsg, &FrontendID); err != nil || FrontendID.ID == 0 {
 		return nil, err
 	}
-	return &l3n4AddrID, nil
+	return &FrontendID, nil
 }
 
 // GetL3n4AddrID returns the L3n4AddrID that belongs to the given id.
-func GetL3n4AddrID(id uint32) (*types.L3n4AddrID, error) {
+func GetL3n4AddrID(id uint32) (*FrontendID, error) {
 	strID := strconv.FormatUint(uint64(id), 10)
 	return getL3n4AddrID(path.Join(common.ServiceIDKeyPath, strID))
 }
 
 // GetL3n4AddrIDBySHA256 returns the L3n4AddrID that have the given SHA256SUM.
-func GetL3n4AddrIDBySHA256(sha256sum string) (*types.L3n4AddrID, error) {
+func GetL3n4AddrIDBySHA256(sha256sum string) (*FrontendID, error) {
 	return getL3n4AddrID(path.Join(common.ServicesKeyPath, sha256sum))
 }
 
 // DeleteL3n4AddrIDByUUID deletes the L3n4AddrID belonging to the given id.
 func DeleteL3n4AddrIDByUUID(id uint32) error {
-	l3n4AddrID, err := GetL3n4AddrID(id)
+	FrontendID, err := GetL3n4AddrID(id)
 	if err != nil {
 		return err
 	}
-	if l3n4AddrID == nil {
+	if FrontendID == nil {
 		return nil
 	}
 
-	return DeleteL3n4AddrIDBySHA256(l3n4AddrID.SHA256Sum())
+	return DeleteL3n4AddrIDBySHA256(FrontendID.SHA256Sum())
 }
 
 // DeleteL3n4AddrIDBySHA256 deletes the L3n4AddrID that belong to the serviceL4ID'
@@ -148,22 +172,17 @@ func DeleteL3n4AddrIDBySHA256(sha256Sum string) error {
 		return nil
 	}
 
-	var l3n4AddrID types.L3n4AddrID
-	if err := json.Unmarshal(rmsg, &l3n4AddrID); err != nil {
+	var FrontendID FrontendID
+	if err := json.Unmarshal(rmsg, &FrontendID); err != nil {
 		return err
 	}
-	oldL3n4ID := l3n4AddrID.ID
-	l3n4AddrID.ID = 0
+	oldL3n4ID := FrontendID.ID
+	FrontendID.ID = 0
 
 	// update the value in the kvstore
-	if err := updateL3n4AddrIDRef(oldL3n4ID, l3n4AddrID); err != nil {
+	if err := updateL3n4AddrIDRef(oldL3n4ID, FrontendID); err != nil {
 		return err
 	}
 
-	return kvstore.Client.SetValue(svcPath, l3n4AddrID)
-}
-
-// GetMaxServiceID returns the maximum possible free UUID stored in the kvstore.
-func GetMaxServiceID() (uint32, error) {
-	return kvstore.Client.GetMaxID(common.LastFreeServiceIDKeyPath, common.FirstFreeServiceID)
+	return kvstore.Client.SetValue(svcPath, FrontendID)
 }

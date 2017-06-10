@@ -21,6 +21,7 @@ import (
 
 	"github.com/cilium/cilium/common/types"
 	"github.com/cilium/cilium/pkg/bpf"
+	"github.com/cilium/cilium/pkg/lb"
 )
 
 const (
@@ -357,20 +358,20 @@ func L3n4Addr2ServiceKey(l3n4Addr types.L3n4Addr) ServiceKey {
 }
 
 // LBSVC2ServiceKeynValue transforms the SVC cilium type into a bpf SVC type.
-func LBSVC2ServiceKeynValue(svc types.LBSVC) (ServiceKey, []ServiceValue, error) {
+func LBSVC2ServiceKeynValue(svc lb.Service) (ServiceKey, []ServiceValue, error) {
 
-	fe := L3n4Addr2ServiceKey(svc.FE.L3n4Addr)
+	fe := L3n4Addr2ServiceKey(svc.Frontend.GetL3n4Addr())
 
 	// Create a list of ServiceValues so we know everything is safe to put in the lb
 	// map
 	besValues := []ServiceValue{}
-	for _, be := range svc.BES {
+	for _, be := range svc.Backends {
 		beValue := fe.NewValue().(ServiceValue)
 		if err := beValue.SetAddress(be.IP); err != nil {
 			return nil, nil, err
 		}
 		beValue.SetPort(uint16(be.Port))
-		beValue.SetRevNat(int(svc.FE.ID))
+		beValue.SetRevNat(int(svc.ID))
 		beValue.SetWeight(be.Weight)
 
 		besValues = append(besValues, beValue)
