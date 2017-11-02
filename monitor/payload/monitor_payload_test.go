@@ -16,6 +16,8 @@ package payload
 
 import (
 	"bytes"
+	"encoding/gob"
+	"io"
 	"testing"
 
 	"github.com/cilium/cilium/pkg/comparator"
@@ -79,7 +81,7 @@ func (s *PayloadSuite) TestWriteReadMetaPayload(c *C) {
 	c.Assert(payload1, comparator.DeepEquals, payload2)
 }
 
-func (s *PayloadSuite) BenchmarkWriteMetaPayload(c *C) {
+func BenchmarkWriteMetaPayload(b *testing.B) {
 	meta := Meta{Size: 1234}
 	pl := Payload{
 		Data: []byte{1, 2, 3, 4},
@@ -91,16 +93,20 @@ func (s *PayloadSuite) BenchmarkWriteMetaPayload(c *C) {
 	// Do a first dry run to pre-allocate the buffer capacity.
 	var buf bytes.Buffer
 	err := WriteMetaPayload(&buf, &meta, &pl)
-	c.Assert(err, Equals, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
 
-	for i := 0; i < c.N; i++ {
+	for i := 0; i < b.N; i++ {
 		buf.Reset()
 		err := WriteMetaPayload(&buf, &meta, &pl)
-		c.Assert(err, Equals, nil)
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
-func (s *PayloadSuite) BenchmarkReadMetaPayload(c *C) {
+func BenchmarkReadMetaPayload(b *testing.B) {
 	meta1 := Meta{Size: 1234}
 	payload1 := Payload{
 		Data: []byte{1, 2, 3, 4},
@@ -111,13 +117,149 @@ func (s *PayloadSuite) BenchmarkReadMetaPayload(c *C) {
 
 	var buf bytes.Buffer
 	err := WriteMetaPayload(&buf, &meta1, &payload1)
-	c.Assert(err, Equals, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
 
 	var meta2 Meta
 	var payload2 Payload
-	for i := 0; i < c.N; i++ {
+	for i := 0; i < b.N; i++ {
 		readBuf := bytes.NewBuffer(buf.Bytes())
 		err = ReadMetaPayload(readBuf, &meta2, &payload2)
-		c.Assert(err, Equals, nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkEncodeMetaPayload(b *testing.B) {
+	payload1 := Payload{
+		Data: []byte{1, 2, 3, 4},
+		Lost: 5243,
+		CPU:  12,
+		Type: 9,
+	}
+
+	for i := 0; i < b.N; i++ {
+		_, err := payload1.Encode()
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkDecodeMetaPayload(b *testing.B) {
+	payload1 := Payload{
+		Data: []byte{1, 2, 3, 4},
+		Lost: 5243,
+		CPU:  12,
+		Type: 9,
+	}
+	buf, err := payload1.Encode()
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	var payload2 Payload
+	for i := 0; i < b.N; i++ {
+		err = payload2.Decode(buf)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkMetaGobEncode(b *testing.B) {
+	meta := Meta{Size: 1234}
+
+	// Fill the buffer once so it allocates enough ram so that we don't need to
+	// reallocate again during the test
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(&meta)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	for i := 0; i < b.N; i++ {
+		buf.Reset()
+		err := enc.Encode(&meta)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkMetaGobDecode(b *testing.B) {
+	meta1 := Meta{Size: 1234}
+
+	var bufOriginal bytes.Buffer
+	enc := gob.NewEncoder(&bufOriginal)
+	err := enc.Encode(&meta1)
+	if err != nil {
+		b.Fatal(err)
+	}
+	reader := bytes.NewReader(bufOriginal.Bytes())
+
+	var meta2 Meta
+	for i := 0; i < b.N; i++ {
+		reader.Seek(0, io.SeekStart)
+		dec := gob.NewDecoder(reader)
+		err := dec.Decode(&meta2)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkPayloadGobEncode(b *testing.B) {
+	pl := Payload{
+		Data: []byte{1, 2, 3, 4},
+		Lost: 5243,
+		CPU:  12,
+		Type: 9,
+	}
+	// Fill the buffer once so it allocates enough ram so that we don't need to
+	// reallocate again during the test
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(&pl)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	for i := 0; i < b.N; i++ {
+		buf.Reset()
+		err := enc.Encode(&pl)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkPayloadGobDecode(b *testing.B) {
+	pl := Payload{
+		Data: []byte{1, 2, 3, 4},
+		Lost: 5243,
+		CPU:  12,
+		Type: 9,
+	}
+
+	var bufOriginal bytes.Buffer
+	enc := gob.NewEncoder(&bufOriginal)
+	err := enc.Encode(&pl)
+	if err != nil {
+		b.Fatal(err)
+	}
+	reader := bytes.NewReader(bufOriginal.Bytes())
+
+	var pl2 Payload
+	for i := 0; i < b.N; i++ {
+		reader.Seek(0, io.SeekStart)
+		dec := gob.NewDecoder(reader)
+		err := dec.Decode(&pl2)
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 }
