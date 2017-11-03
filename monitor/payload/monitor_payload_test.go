@@ -24,6 +24,37 @@ import (
 	. "gopkg.in/check.v1"
 )
 
+func init() {
+	var buf bytes.Buffer
+
+	buf.Reset()
+	payloadEnc := gob.NewEncoder(&buf)
+	if err := payloadEnc.Encode(&samplePayload); err != nil {
+		panic(err)
+	}
+	gobEncodedPayload = append([]byte(nil), buf.Bytes()...)
+
+	buf.Reset()
+	sampleMeta.Size = uint32(len(gobEncodedPayload))
+	metaEnc := gob.NewEncoder(&buf)
+	if err := metaEnc.Encode(&sampleMeta); err != nil {
+		panic(err)
+	}
+	gobEncodedMeta = append([]byte(nil), buf.Bytes()...)
+}
+
+var (
+	sampleMeta    = Meta{Size: 1234}
+	samplePayload = Payload{
+		Data: []byte{1, 2, 3, 4},
+		Lost: 5243,
+		CPU:  12,
+		Type: 9,
+	}
+	gobEncodedMeta    []byte
+	gobEncodedPayload []byte
+)
+
 func Test(t *testing.T) { TestingT(t) }
 
 type PayloadSuite struct{}
@@ -170,20 +201,11 @@ func BenchmarkDecodeMetaPayload(b *testing.B) {
 }
 
 func BenchmarkMetaGobEncode(b *testing.B) {
-	meta := Meta{Size: 1234}
-
-	// Fill the buffer once so it allocates enough ram so that we don't need to
-	// reallocate again during the test
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(&meta)
-	if err != nil {
-		b.Fatal(err)
-	}
-
 	for i := 0; i < b.N; i++ {
 		buf.Reset()
-		err := enc.Encode(&meta)
+		err := enc.Encode(&sampleMeta)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -191,74 +213,41 @@ func BenchmarkMetaGobEncode(b *testing.B) {
 }
 
 func BenchmarkMetaGobDecode(b *testing.B) {
-	meta1 := Meta{Size: 1234}
+	reader := bytes.NewReader(gobEncodedMeta)
 
-	var bufOriginal bytes.Buffer
-	enc := gob.NewEncoder(&bufOriginal)
-	err := enc.Encode(&meta1)
-	if err != nil {
-		b.Fatal(err)
-	}
-	reader := bytes.NewReader(bufOriginal.Bytes())
-
-	var meta2 Meta
+	var meta Meta
 	for i := 0; i < b.N; i++ {
-		reader.Seek(0, io.SeekStart)
+		if _, err := reader.Seek(0, io.SeekStart); err != nil {
+			b.Fatal(err)
+		}
 		dec := gob.NewDecoder(reader)
-		err := dec.Decode(&meta2)
-		if err != nil {
+		if err := dec.Decode(&meta); err != nil {
 			b.Fatal(err)
 		}
 	}
 }
 
 func BenchmarkPayloadGobEncode(b *testing.B) {
-	pl := Payload{
-		Data: []byte{1, 2, 3, 4},
-		Lost: 5243,
-		CPU:  12,
-		Type: 9,
-	}
-	// Fill the buffer once so it allocates enough ram so that we don't need to
-	// reallocate again during the test
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(&pl)
-	if err != nil {
-		b.Fatal(err)
-	}
-
 	for i := 0; i < b.N; i++ {
 		buf.Reset()
-		err := enc.Encode(&pl)
-		if err != nil {
+		if err := enc.Encode(&samplePayload); err != nil {
 			b.Fatal(err)
 		}
 	}
 }
 
 func BenchmarkPayloadGobDecode(b *testing.B) {
-	pl := Payload{
-		Data: []byte{1, 2, 3, 4},
-		Lost: 5243,
-		CPU:  12,
-		Type: 9,
-	}
+	reader := bytes.NewReader(gobEncodedPayload)
 
-	var bufOriginal bytes.Buffer
-	enc := gob.NewEncoder(&bufOriginal)
-	err := enc.Encode(&pl)
-	if err != nil {
-		b.Fatal(err)
-	}
-	reader := bytes.NewReader(bufOriginal.Bytes())
-
-	var pl2 Payload
+	var pl Payload
 	for i := 0; i < b.N; i++ {
-		reader.Seek(0, io.SeekStart)
+		if _, err := reader.Seek(0, io.SeekStart); err != nil {
+			b.Fatal(err)
+		}
 		dec := gob.NewDecoder(reader)
-		err := dec.Decode(&pl2)
-		if err != nil {
+		if err := dec.Decode(&pl); err != nil {
 			b.Fatal(err)
 		}
 	}

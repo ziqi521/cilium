@@ -15,10 +15,12 @@
 package main
 
 import (
+	"bytes"
 	"container/list"
 	"encoding/json"
 	"fmt"
 	"net"
+	"sync"
 	"syscall"
 	"time"
 
@@ -40,6 +42,27 @@ var (
 
 // Monitor structure for centralizing the responsibilities of the main events reader.
 type Monitor struct {
+	buffers sync.Pool
+}
+
+func (m *Monitor) GetBuffer() *bytes.Buffer {
+	buf, ok := m.buffers.Get().(*bytes.Buffer)
+	switch {
+	case !ok:
+		// ignore this object, who knows what it is, then fallthrough to making a
+		// buffer to work with
+		fallthrough
+	case buf == nil:
+		buf = &bytes.Buffer{}
+	}
+
+	return buf
+}
+
+func (m *Monitor) PutBuffer(buf *bytes.Buffer) {
+	// reset and return the buffer
+	buf.Reset()
+	m.buffers.Put(buf)
 }
 
 // Run starts monitoring.
@@ -119,35 +142,34 @@ func (m *Monitor) handleConnection(server net.Listener) {
 
 // send writes the payload.Meta and the actual payload to the active
 // connections.
-func (m *Monitor) send(pl payload.Payload) {
+func (m *Monitor) send(pl *payload.Payload) {
 	mutex.Lock()
 	defer mutex.Unlock()
 	if listeners.Len() == 0 {
 		return
 	}
 
-	payloadBuf, err := pl.Encode()
-	if err != nil {
-		log.WithError(err).Fatal("payload encode")
-	}
-	meta := &payload.Meta{Size: uint32(len(payloadBuf))}
-	metaBuf, err := meta.MarshalBinary()
-	if err != nil {
-		log.WithError(err).Fatal("meta encode")
-	}
+	// Only serialise payload. This happens because we don't know the encoded
+	// length of the payload. We need to get that, then construct the meta
+	// object.
+	payloadBuf := m.GetBuffer()
+	defer m.PutBuffer(payloadBuf)
+	pl.WriteBinary(payloadBuf)
+	meta := &payload.Meta{Size: uint32(payloadBuf.Len())}
+
 	var next *list.Element
 	for e := listeners.Front(); e != nil; e = next {
 		client := e.Value.(net.Conn)
 		next = e.Next()
 
-		if _, err := client.Write(metaBuf); err != nil {
+		if err := meta.WriteBinary(client); err != nil {
 			log.WithError(err).Warn("metadata write failed; removing client")
 			client.Close()
 			listeners.Remove(e)
 			continue
 		}
 
-		if _, err := client.Write(payloadBuf); err != nil {
+		if _, err := client.Write(payloadBuf.Bytes()); err != nil {
 			log.WithError(err).Warn("payload write failed; removing client")
 			client.Close()
 			listeners.Remove(e)
@@ -158,10 +180,10 @@ func (m *Monitor) send(pl payload.Payload) {
 
 func (m *Monitor) receiveEvent(es *bpf.PerfEventSample, c int) {
 	pl := payload.Payload{Data: es.DataCopy(), CPU: c, Lost: 0, Type: payload.EventSample}
-	m.send(pl)
+	m.send(&pl)
 }
 
 func (m *Monitor) lostEvent(el *bpf.PerfEventLost, c int) {
 	pl := payload.Payload{Data: []byte{}, CPU: c, Lost: el.Lost, Type: payload.RecordLost}
-	m.send(pl)
+	m.send(&pl)
 }
