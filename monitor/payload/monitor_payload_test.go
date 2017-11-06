@@ -21,15 +21,20 @@ import (
 	"testing"
 
 	"github.com/cilium/cilium/pkg/comparator"
+	"github.com/pquerna/ffjson/ffjson"
 	. "gopkg.in/check.v1"
 )
 
 func init() {
-	var buf bytes.Buffer
+	var (
+		err       error
+		buf       bytes.Buffer
+		jsonBytes []byte
+	)
 
 	buf.Reset()
 	payloadEnc := gob.NewEncoder(&buf)
-	if err := payloadEnc.Encode(&samplePayload); err != nil {
+	if err = payloadEnc.Encode(&samplePayload); err != nil {
 		panic(err)
 	}
 	gobEncodedPayload = append([]byte(nil), buf.Bytes()...)
@@ -37,10 +42,22 @@ func init() {
 	buf.Reset()
 	sampleMeta.Size = uint32(len(gobEncodedPayload))
 	metaEnc := gob.NewEncoder(&buf)
-	if err := metaEnc.Encode(&sampleMeta); err != nil {
+	if err = metaEnc.Encode(&sampleMeta); err != nil {
 		panic(err)
 	}
 	gobEncodedMeta = append([]byte(nil), buf.Bytes()...)
+
+	jsonBytes, err = ffjson.Marshal(&sampleMeta)
+	if err != nil {
+		panic(err)
+	}
+	jsonEncodedMeta = append([]byte(nil), jsonBytes...)
+
+	jsonBytes, err = ffjson.Marshal(&samplePayload)
+	if err != nil {
+		panic(err)
+	}
+	jsonEncodedPayload = append([]byte(nil), jsonBytes...)
 }
 
 var (
@@ -51,8 +68,11 @@ var (
 		CPU:  12,
 		Type: 9,
 	}
-	gobEncodedMeta    []byte
-	gobEncodedPayload []byte
+
+	gobEncodedMeta     []byte
+	gobEncodedPayload  []byte
+	jsonEncodedMeta    []byte
+	jsonEncodedPayload []byte
 )
 
 func Test(t *testing.T) { TestingT(t) }
@@ -248,6 +268,28 @@ func BenchmarkPayloadGobDecode(b *testing.B) {
 		}
 		dec := gob.NewDecoder(reader)
 		if err := dec.Decode(&pl); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkPayloadJsonEncode(b *testing.B) {
+	var buf bytes.Buffer
+	enc := ffjson.NewEncoder(&buf)
+	for i := 0; i < b.N; i++ {
+		buf.Reset()
+		if err := enc.Encode(&samplePayload); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkPayloadJsonDecode(b *testing.B) {
+	dec := ffjson.NewDecoder()
+
+	var pl Payload
+	for i := 0; i < b.N; i++ {
+		if err := dec.Decode(jsonEncodedPayload, &pl); err != nil {
 			b.Fatal(err)
 		}
 	}
