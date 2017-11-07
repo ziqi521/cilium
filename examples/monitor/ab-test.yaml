@@ -1,0 +1,91 @@
+---
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: "allow-ab-peers"
+spec:
+  podSelector:
+    matchLabels:
+     abpeer: ""
+  ingress:
+  - fromEndpoints:
+    - matchLabels:
+        abpeer: ""
+    toPorts:
+    - ports:
+      - port: "80"
+        protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ab-peer1-service
+spec:
+  ports:
+  - port: 80
+  selector:
+    id: ab-peer1
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: ab-peer1
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        id: ab-peer1
+        abpeer: ""
+    spec:
+      containers:
+      - name: abpeer
+        image: cilium/demo-httpd
+        ports:
+        - containerPort: 80
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: "kubernetes.io/hostname"
+              labelSelector:
+                matchExpressions:
+                  - key: "abpeer"
+                    operator: In
+                    values: [""] 
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ab-peer2-service
+spec:
+  ports:
+  - port: 80
+  selector:
+    id: ab-peer2
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: ab-peer2
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        id: ab-peer2
+        abpeer: ""
+    spec:
+      containers:
+      - name: abpeer
+        image: cilium/demo-httpd
+        ports:
+        - containerPort: 80
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: "kubernetes.io/hostname"
+              labelSelector:
+                matchExpressions:
+                  - key: "abpeer"
+                    operator: In
+                    values: [""]
