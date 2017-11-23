@@ -276,6 +276,7 @@ var badLogMessages = map[string][]string{
 	ClangErrorMsg:      nil,
 	symbolSubstitution: nil,
 	uninitializedRegen: nil,
+	"DATA RACE":        nil,
 }
 
 var ciliumCLICommands = map[string]string{

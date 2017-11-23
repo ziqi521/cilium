@@ -14,7 +14,7 @@ LOCALSTATEDIR?=/var
 RUNDIR?=/var/run
 CONFDIR?=/etc
 
-CGO_DISABLED = CGO_ENABLED=0
+CGO_DISABLED = CGO_ENABLED=1
 GOLIST ?= GO111MODULE=off
 ifeq ($(GO),)
 	GO = $(CGO_DISABLED) go
@@ -82,10 +82,10 @@ endif
 GOBUILD = $(GOFLAGS) -ldflags '$(GOLDFLAGS)' $(EXTRA_GOBUILD_FLAGS)
 
 # Uncomment to enable race detection
-#GOBUILD += -race
+GOBUILD += -race
 
 # Uncomment to enable deadlock detection
-#GOBUILD += -tags lockdebug
+GOBUILD += -tags lockdebug
 
 ifneq ($(LOCKDEBUG),)
     GOBUILD += -tags lockdebug

@@ -472,7 +472,6 @@ install-manpages:
 	mandb
 
 postcheck: build
-	$(QUIET)$(MAKE) $(SUBMAKEOPTS) -C Documentation update-cmdref check
 	@$(ECHO_CHECK) contrib/scripts/lock-check.sh
 	$(QUIET) contrib/scripts/lock-check.sh
 	@$(ECHO_CHECK) contrib/scripts/rand-check.sh
