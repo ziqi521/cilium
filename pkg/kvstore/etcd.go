@@ -27,6 +27,7 @@ import (
 	"github.com/cilium/cilium/pkg/controller"
 	"github.com/cilium/cilium/pkg/lock"
 	"github.com/cilium/cilium/pkg/logging/logfields"
+	"github.com/cilium/cilium/pkg/node"
 
 	client "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/concurrency"
@@ -220,7 +221,77 @@ func newEtcdClient(config *client.Config, cfgPath string) (BackendOperations, er
 		},
 	)
 
+	if err := startQuorumTester(ec); err != nil {
+		log.WithError(err).Error("Error starting etcd quorum tester")
+	}
+
 	return ec, nil
+}
+
+func startQuorumTester(ec *etcdClient) error {
+
+	var (
+		controllerName      = "etcd-quorum-tester"
+		runInterval_s       = 30
+		runInterval         = time.Duration(runInterval_s) * time.Second
+		sharedQuorumTestKey = "/ciliumSharedQuorumTestKey"
+		nodeQuorumTestKey   = "/ciliumQuorumTestKey-" + node.GetName()
+		quorumTestTimeout   = 10 * time.Second
+		ctrlLog             = log.WithField("controller", controllerName)
+	)
+
+	ctxTimeout, cancel := ctx.WithTimeout(ctx.Background(), quorumTestTimeout)
+	defer cancel()
+
+	lease, err := ec.client.Grant(ctxTimeout, int64(2*runInterval_s))
+	if err != nil {
+		return err
+	}
+
+	kvstoreControllers.UpdateController(controllerName,
+		controller.ControllerParams{
+			RunInterval:  runInterval,
+			NoErrorRetry: true,
+			DoFunc: func() (err error) {
+				ctxTimeout, cancel := ctx.WithTimeout(ctx.Background(), quorumTestTimeout)
+				defer cancel()
+
+				ctrlLog.Debug("Testing etcd quorum")
+
+				ctrlLog.Debug("Renewing etcd quorum lease")
+				if _, err := ec.client.KeepAliveOnce(ctxTimeout, lease.ID); err != nil {
+					ctrlLog.WithError(err).Error("Cannot renew quorum test lease")
+					return err
+				}
+
+				for _, key := range []string{nodeQuorumTestKey, sharedQuorumTestKey} {
+					value := time.Now().String()
+					scopedLog := ctrlLog.WithFields(logrus.Fields{
+						"key":   key,
+						"value": value,
+					})
+
+					_, err = ec.client.Put(ctxTimeout, key, value, client.WithLease(lease.ID))
+					if err != nil {
+						scopedLog.WithError(err).Error("Cannot set quorum test key")
+						return err
+					}
+					scopedLog.Debug("Successfully set quorum test key")
+
+					_, err = ec.client.Get(ctxTimeout, key)
+					if err != nil {
+						log.WithError(err).WithField("key", key).Error("Cannot get quorum test key")
+						scopedLog.WithError(err).Error("Cannot set quorum test key")
+						return err
+					}
+					scopedLog.Debug("Successfully fetched quorum test key")
+				}
+				return nil
+			},
+		},
+	)
+
+	return nil
 }
 
 func getEPVersion(c client.Maintenance, etcdEP string, timeout time.Duration) (*version.Version, error) {
