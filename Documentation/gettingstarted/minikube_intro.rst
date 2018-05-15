@@ -1,12 +1,11 @@
 Step 0: Install kubectl & minikube
 ==================================
 
-1. Install ``kubectl`` version ``>= 1.7.0`` as described in the
-`Kubernetes Docs
-<https://kubernetes.io/docs/tasks/tools/install-kubectl/>`_.
+1. Install ``kubectl`` version ``>= 1.7.0`` as described in the 
+`Kubernetes Docs <https://kubernetes.io/docs/tasks/tools/install-kubectl/>`_.
 
-2. Install one of the `hypervisors supported by minikube
-   <https://kubernetes.io/docs/tasks/tools/install-minikube/>`_.
+2. Install one of the 
+`hypervisors supported by minikube <https://kubernetes.io/docs/tasks/tools/install-minikube/>`_.
 
 3. Install ``minikube`` ``>= 0.22.3`` as described on `minikube's
 github page <https://github.com/kubernetes/minikube/releases>`_.
@@ -40,7 +39,7 @@ Bind the Kubernetes system account to the ``cluster-admin`` role to enable the
     $ kubectl create clusterrolebinding kube-system-default-binding-cluster-admin --clusterrole=cluster-admin --serviceaccount=kube-system:default
 
 
-4. Install etcd as a dependency of cilium in minikube by running:
+4. Install ``etcd`` as a dependency of cilium in minikube by running:
 
 .. parsed-literal::
 
@@ -49,7 +48,7 @@ Bind the Kubernetes system account to the ``cluster-admin`` role to enable the
   statefulset.apps "etcd-cilium" created
 
 To check that all pods are ``Running`` and 100% ready, including ``kube-dns``
-and ``etcd-cilium-0`` run:
+and ``etcd-cilium-0``, run:
 
 ::
 
@@ -70,4 +69,4 @@ If you see output similar to this, you are ready to proceed to the next step.
 .. note::
 
     The output might differ between minikube versions, you should expect to have
-    all pods in READY state before continuing.
+    all pods in ``READY`` state before continuing.
