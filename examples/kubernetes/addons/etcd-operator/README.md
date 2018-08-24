@@ -72,6 +72,7 @@ NAME                             READY     STATUS    RESTARTS   AGE
 cilium-etcd-g2sr9qxdhw           1/1       Running   0          6h
 cilium-etcd-ss5jlv4cbq           1/1       Running   0          7h
 cilium-etcd-x28h2rkhz7           1/1       Running   0          7h
+cilium-pggt7                     1/1       Running   0          7h
 etcd-operator-69b5bfc669-fvm8c   1/1       Running   0          1d
 kube-dns-7dcc557ddd-tsqjt        3/3       Running   12         1d
 ```
