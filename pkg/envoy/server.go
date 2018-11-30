@@ -87,7 +87,8 @@ type XDSServer struct {
 	// listeners is the set of names of listeners that have been added by
 	// calling AddListener.
 	// mutex must be held when accessing this.
-	listeners map[string]struct{}
+	// bool is false for standalone listeners, true for kTLS listeners
+	listeners map[string]bool
 
 	// networkPolicyCache publishes network policy configuration updates to
 	// Envoy proxies.
@@ -277,7 +278,7 @@ func StartXDSServer(stateDir string) *XDSServer {
 		httpFilterChainProto:   httpFilterChainProto,
 		tcpFilterChainProto:    tcpFilterChainProto,
 		listenerMutator:        ldsMutator,
-		listeners:              make(map[string]struct{}),
+		listeners:              make(map[string]bool),
 		networkPolicyCache:     npdsCache,
 		NetworkPolicyMutator:   npdsMutator,
 		networkPolicyEndpoints: make(map[string]logger.EndpointUpdater),
@@ -295,7 +296,7 @@ func (s *XDSServer) AddListener(name string, kind policy.L7ParserType, endpointP
 	if _, ok := s.listeners[name]; ok {
 		log.Fatalf("Envoy: Attempt to add existing listener: %s", name)
 	}
-	s.listeners[name] = struct{}{}
+	s.listeners[name] = false
 
 	s.mutex.Unlock()
 
@@ -330,7 +331,7 @@ func (s *XDSServer) AddListener(name string, kind policy.L7ParserType, endpointP
 func (s *XDSServer) RemoveListener(name string, wg *completion.WaitGroup) xds.AckingResourceMutatorRevertFunc {
 	s.mutex.Lock()
 	log.Debugf("Envoy: removeListener %s", name)
-	if _, ok := s.listeners[name]; !ok {
+	if iskTLS, ok := s.listeners[name]; !ok || iskTLS {
 		// Bail out if this listener does not exist
 		log.Fatalf("Envoy: Attempt to remove non-existent listener: %s", name)
 	}
@@ -341,7 +342,7 @@ func (s *XDSServer) RemoveListener(name string, wg *completion.WaitGroup) xds.Ac
 
 	return func(completion *completion.Completion) {
 		s.mutex.Lock()
-		s.listeners[name] = struct{}{}
+		s.listeners[name] = false
 		s.mutex.Unlock()
 
 		listenerRevertFunc(completion)
