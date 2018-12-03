@@ -32,6 +32,10 @@ import (
 // This is a toy protocol to teach people how to build a Cilium golang proxy parser.
 //
 
+const (
+	parserName = "r2d2"
+)
+
 // Current R2D2 parser supports filtering on a basic text protocol with 4 request-types:
 // "READ <filename>\r\n"  - Read a file from the Droid
 // "WRITE <filename>\r\n" - Write a file to the Droid
@@ -51,6 +55,11 @@ import (
 type r2d2Rule struct {
 	cmdExact          string
 	fileRegexCompiled *regexp.Regexp
+}
+
+// ParserName returns the name of this parser
+func (rule *r2d2Rule) ParserName() string {
+	return parserName
 }
 
 type r2d2RequestData struct {
@@ -130,8 +139,8 @@ type factory struct{}
 
 func init() {
 	log.Info("init(): Registering r2d2ParserFactory")
-	proxylib.RegisterParserFactory("r2d2", &factory{})
-	proxylib.RegisterL7RuleParser("r2d2", ruleParser)
+	proxylib.RegisterParserFactory(parserName, &factory{})
+	proxylib.RegisterL7RuleParser(parserName, ruleParser)
 }
 
 type parser struct {
@@ -188,7 +197,7 @@ func (p *parser) OnData(reply, endStream bool, dataArray [][]byte) (proxylib.OpT
 	p.connection.Log(access_log_entry_type,
 		&cilium.LogEntry_GenericL7{
 			&cilium.L7LogEntry{
-				Proto: "r2d2",
+				Proto: parserName,
 				Fields: map[string]string{
 					"cmd":  reqData.cmd,
 					"file": reqData.file,

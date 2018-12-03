@@ -30,6 +30,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const (
+	parserName = "test.headerparser"
+)
+
 //
 // Header parser used for testing
 //
@@ -38,6 +42,11 @@ type HeaderRule struct {
 	hasPrefix []byte
 	contains  []byte
 	hasSuffix []byte
+}
+
+// ParserName returns the name of this parser
+func (rule *HeaderRule) ParserName() string {
+	return parserName
 }
 
 // Matches returns true if the HeaderRule matches
@@ -96,10 +105,6 @@ func L7HeaderRuleParser(rule *cilium.PortNetworkPolicyRule) []L7NetworkPolicyRul
 type HeaderParserFactory struct{}
 
 var headerParserFactory *HeaderParserFactory
-
-const (
-	parserName = "test.headerparser"
-)
 
 func init() {
 	log.Info("init(): Registering headerParserFactory")

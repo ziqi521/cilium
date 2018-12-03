@@ -26,6 +26,7 @@ import (
 // Each L7 rule implements this interface
 type L7NetworkPolicyRule interface {
 	Matches(interface{}) bool
+	ParserName() string
 }
 
 // L7RuleParser takes the protobuf and converts the oneof relevant for the given L7 to an array
@@ -81,7 +82,7 @@ func newPortNetworkPolicyRule(config *cilium.PortNetworkPolicyRule) (PortNetwork
 		} else {
 			log.Debugf("NPDS::PortNetworkPolicyRule: Unknown L7 (%s), should drop everything.", l7Name)
 		}
-		// Unknown parsers are expected, bur will result in drop-all policy
+		// Unknown parsers are expected, but will result in drop-all policy
 		return rule, l7Name, ok
 	}
 	return rule, "", true // No L7 is ok
@@ -111,6 +112,7 @@ func (p *PortNetworkPolicyRule) Matches(remoteId uint32, l7 interface{}) bool {
 
 type PortNetworkPolicyRules struct {
 	Rules       []PortNetworkPolicyRule
+	ParserName  string // "" if no l& rules
 	HaveL7Rules bool
 }
 
@@ -122,22 +124,21 @@ func newPortNetworkPolicyRules(config []*cilium.PortNetworkPolicyRule) (PortNetw
 	if len(config) == 0 {
 		log.Debugf("NPDS::PortNetworkPolicyRules: No rules, will allow everything.")
 	}
-	var firstTypeName string
 	for _, rule := range config {
-		newRule, typeName, ok := newPortNetworkPolicyRule(rule)
+		newRule, parserName, ok := newPortNetworkPolicyRule(rule)
 		if !ok {
 			// Unknown L7 parser, must drop all traffic
 			// Empty set of rules drops only when 'HaveL7Rules' is 'true'
-			log.Debugf("NPDS::PortNetworkPolicyRules: Unknown L7 (%s), will drop everything.", typeName)
-			return PortNetworkPolicyRules{HaveL7Rules: true}, false
+			log.Debugf("NPDS::PortNetworkPolicyRules: Unknown L7 (%s), will drop everything.", parserName)
+			return PortNetworkPolicyRules{HaveL7Rules: true, ParserName: parserName}, false
 		}
 		if len(newRule.L7Rules) > 0 {
 			rules.HaveL7Rules = true
 		}
-		if typeName != "" {
-			if firstTypeName == "" {
-				firstTypeName = typeName
-			} else if typeName != firstTypeName {
+		if parserName != "" {
+			if rules.ParserName == "" {
+				rules.ParserName = parserName
+			} else if parserName != rules.ParserName {
 				ParseError("Mismatching L7 types on the same port", config)
 			}
 		}
@@ -167,6 +168,10 @@ func (p *PortNetworkPolicyRules) Matches(remoteId uint32, l7 interface{}) bool {
 		}
 	}
 	return false
+}
+
+func (p *PortNetworkPolicyRules) getParserName() string {
+	return p.ParserName
 }
 
 type PortNetworkPolicies struct {
@@ -234,6 +239,13 @@ func (p *PortNetworkPolicies) Matches(port, remoteId uint32, l7 interface{}) boo
 	return false
 }
 
+func (p *PortNetworkPolicies) getParserName(port uint32) string {
+	if rules, found := p.Rules[port]; found {
+		return rules.getParserName()
+	}
+	return ""
+}
+
 type PolicyInstance struct {
 	protobuf cilium.NetworkPolicy
 	Ingress  PortNetworkPolicies
@@ -255,6 +267,13 @@ func (p *PolicyInstance) Matches(ingress bool, port, remoteId uint32, l7 interfa
 		return p.Ingress.Matches(port, remoteId, l7)
 	}
 	return p.Egress.Matches(port, remoteId, l7)
+}
+
+func (p *PolicyInstance) getParserName(ingress bool, port uint32) string {
+	if ingress {
+		return p.Ingress.getParserName(port)
+	}
+	return p.Egress.getParserName(port)
 }
 
 // Network policies keyed by endpoint policy names

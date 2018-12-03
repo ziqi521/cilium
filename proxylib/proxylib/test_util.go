@@ -75,14 +75,22 @@ func (ins *Instance) InsertPolicyText(version string, policies []string, expectF
 
 var connectionID uint64
 
-func (ins *Instance) CheckNewConnectionOK(c *C, proto string, ingress bool, srcId, dstId uint32, srcAddr, dstAddr, policyName string) *Connection {
-	err, conn := ins.CheckNewConnection(c, proto, ingress, srcId, dstId, srcAddr, dstAddr, policyName)
+func (ins *Instance) CheckNewConnectionOK(c *C, ingress bool, srcId, dstId uint32, srcAddr, dstAddr, policyName string) *Connection {
+	return ins.CheckNewParserConnectionOK(c, "", ingress, srcId, dstId, srcAddr, dstAddr, policyName)
+}
+
+func (ins *Instance) CheckNewParserConnectionOK(c *C, proto string, ingress bool, srcId, dstId uint32, srcAddr, dstAddr, policyName string) *Connection {
+	err, conn := ins.CheckNewParserConnection(c, proto, ingress, srcId, dstId, srcAddr, dstAddr, policyName)
 	c.Assert(err, IsNil)
 	c.Assert(conn, Not(IsNil))
 	return conn
 }
 
-func (ins *Instance) CheckNewConnection(c *C, proto string, ingress bool, srcId, dstId uint32, srcAddr, dstAddr, policyName string) (error, *Connection) {
+func (ins *Instance) CheckNewConnection(c *C, ingress bool, srcId, dstId uint32, srcAddr, dstAddr, policyName string) (error, *Connection) {
+	return ins.CheckNewParserConnection(c, "", ingress, srcId, dstId, srcAddr, dstAddr, policyName)
+}
+
+func (ins *Instance) CheckNewParserConnection(c *C, proto string, ingress bool, srcId, dstId uint32, srcAddr, dstAddr, policyName string) (error, *Connection) {
 	connectionID++
 	bufSize := 1024
 	origBuf := make([]byte, 0, bufSize)

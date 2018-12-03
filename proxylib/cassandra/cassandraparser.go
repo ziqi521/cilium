@@ -27,6 +27,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const (
+	parserName = "cassandra"
+)
+
 //
 // Cassandra v3/v4 Parser
 //
@@ -53,6 +57,11 @@ import (
 type CassandraRule struct {
 	queryActionExact   string
 	tableRegexCompiled *regexp.Regexp
+}
+
+// ParserName returns the name of this parser
+func (rule *CassandraRule) ParserName() string {
+	return parserName
 }
 
 const cassHdrLen = 9
@@ -148,8 +157,8 @@ var cassandraParserFactory *CassandraParserFactory
 
 func init() {
 	log.Info("init(): Registering cassandraParserFactory")
-	RegisterParserFactory("cassandra", cassandraParserFactory)
-	RegisterL7RuleParser("cassandra", CassandraRuleParser)
+	RegisterParserFactory(parserName, cassandraParserFactory)
+	RegisterL7RuleParser(parserName, CassandraRuleParser)
 }
 
 type CassandraParser struct {
@@ -272,7 +281,7 @@ func (p *CassandraParser) OnData(reply, endStream bool, dataArray [][]byte) (OpT
 		p.connection.Log(access_log_entry_type,
 			&cilium.LogEntry_GenericL7{
 				&cilium.L7LogEntry{
-					Proto:  "cassandra",
+					Proto:  parserName,
 					Fields: fields,
 				},
 			})

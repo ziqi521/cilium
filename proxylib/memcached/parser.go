@@ -31,6 +31,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const (
+	parserName = "memcache"
+)
+
 // Rule matches against memcached requests
 type Rule struct {
 	// allowed commands
@@ -41,6 +45,11 @@ type Rule struct {
 	regex     *regexp.Regexp
 
 	empty bool
+}
+
+// ParserName returns the name of this parser
+func (rule *Rule) ParserName() string {
+	return parserName
 }
 
 // Matches returns true if the Rule matches
@@ -162,10 +171,6 @@ func (p *ParserFactory) Create(connection *proxylib.Connection) proxylib.Parser 
 var _ proxylib.ParserFactory = &ParserFactory{}
 
 var memcacheParserFactory *ParserFactory
-
-const (
-	parserName = "memcache"
-)
 
 func init() {
 	log.Info("init(): Registering memcacheParserFactory")

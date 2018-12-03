@@ -62,11 +62,6 @@ type Connection struct {
 }
 
 func NewConnection(instance *Instance, proto string, connectionId uint64, ingress bool, srcId, dstId uint32, srcAddr, dstAddr, policyName string, origBuf, replyBuf *[]byte) (error, *Connection) {
-	// Find the parser for the proto
-	parserFactory := GetParserFactory(proto)
-	if parserFactory == nil {
-		return UNKNOWN_PARSER, nil
-	}
 	_, port, err := net.SplitHostPort(dstAddr)
 	if err != nil {
 		return INVALID_ADDRESS, nil
@@ -74,6 +69,16 @@ func NewConnection(instance *Instance, proto string, connectionId uint64, ingres
 	dstPort, err := strconv.ParseUint(port, 10, 32)
 	if err != nil || dstPort == 0 {
 		return INVALID_ADDRESS, nil
+	}
+
+	if proto == "" {
+		proto = instance.GetParserName(policyName, ingress, uint32(dstPort))
+	}
+
+	// Find the parser for the proto
+	parserFactory := GetParserFactory(proto)
+	if parserFactory == nil {
+		return UNKNOWN_PARSER, nil
 	}
 
 	connection := &Connection{

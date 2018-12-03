@@ -164,6 +164,17 @@ func (ins *Instance) PolicyMatches(endpointPolicyName string, ingress bool, port
 	return found && policy.Matches(ingress, port, remoteId, l7)
 }
 
+func (ins *Instance) GetParserName(endpointPolicyName string, ingress bool, port uint32) string {
+	// Policy maps are never modified once published
+	policy, found := ins.getPolicyMap()[endpointPolicyName]
+	if !found {
+		log.Debugf("NPDS: Policy for %s not found", endpointPolicyName)
+		return ""
+	}
+
+	return policy.getParserName(ingress, port)
+}
+
 // Update the PolicyMap from a protobuf. PolicyMap is only ever changed if the whole update is successful.
 func (ins *Instance) PolicyUpdate(resp *envoy_api_v2.DiscoveryResponse) (err error) {
 	defer func() {

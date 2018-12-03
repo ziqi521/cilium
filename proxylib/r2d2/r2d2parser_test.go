@@ -65,7 +65,7 @@ func (s *R2d2Suite) TearDownSuite(c *C) {
 }
 
 func (s *R2d2Suite) TestR2d2OnDataIncomplete(c *C) {
-	conn := s.ins.CheckNewConnectionOK(c, "r2d2", true, 1, 2, "1.1.1.1:34567", "2.2.2.2:80", "no-policy")
+	conn := s.ins.CheckNewParserConnectionOK(c, "r2d2", true, 1, 2, "1.1.1.1:34567", "2.2.2.2:80", "no-policy")
 	data := [][]byte{[]byte("READ xssss")}
 	conn.CheckOnDataOK(c, false, false, &data, []byte{}, proxylib.MORE, 1)
 }
@@ -83,7 +83,7 @@ func (s *R2d2Suite) TestR2d2OnDataBasicPass(c *C) {
 		  >
 		>
 		`})
-	conn := s.ins.CheckNewConnectionOK(c, "r2d2", true, 1, 2, "1.1.1.1:34567", "2.2.2.2:80", "cp1")
+	conn := s.ins.CheckNewConnectionOK(c, true, 1, 2, "1.1.1.1:34567", "2.2.2.2:80", "cp1")
 	msg1 := "READ sssss\r\n"
 	msg2 := "WRITE sssss\r\n"
 	msg3 := "HALT\r\n"
@@ -110,7 +110,7 @@ func (s *R2d2Suite) TestR2d2OnDataMultipleReq(c *C) {
 		  >
 		>
 		`})
-	conn := s.ins.CheckNewConnectionOK(c, "r2d2", true, 1, 2, "1.1.1.1:34567", "2.2.2.2:80", "cp1")
+	conn := s.ins.CheckNewConnectionOK(c, true, 1, 2, "1.1.1.1:34567", "2.2.2.2:80", "cp1")
 	msg1Part1 := "RE"
 	msg1Part2 := "SET\r\n"
 	data := [][]byte{[]byte(msg1Part1), []byte(msg1Part2)}
@@ -139,7 +139,7 @@ func (s *R2d2Suite) TestR2d2OnDataAllowDenyCmd(c *C) {
 		  >
 		>
 		`})
-	conn := s.ins.CheckNewConnectionOK(c, "r2d2", true, 1, 2, "1.1.1.1:34567", "2.2.2.2:80", "cp2")
+	conn := s.ins.CheckNewConnectionOK(c, true, 1, 2, "1.1.1.1:34567", "2.2.2.2:80", "cp2")
 	msg1 := "READ xssss\r\n"
 	msg2 := "WRITE xssss\r\n"
 	data := [][]byte{[]byte(msg1 + msg2)}
@@ -169,7 +169,7 @@ func (s *R2d2Suite) TestR2d2OnDataAllowDenyRegex(c *C) {
 		  >
 		>
 		`})
-	conn := s.ins.CheckNewConnectionOK(c, "r2d2", true, 1, 2, "1.1.1.1:34567", "2.2.2.2:80", "cp3")
+	conn := s.ins.CheckNewConnectionOK(c, true, 1, 2, "1.1.1.1:34567", "2.2.2.2:80", "cp3")
 	msg1 := "READ ssss\r\n"
 	msg2 := "WRITE yyyyy\r\n"
 	data := [][]byte{[]byte(msg1 + msg2)}
