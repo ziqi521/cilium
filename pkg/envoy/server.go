@@ -59,8 +59,11 @@ var (
 )
 
 const (
-	egressClusterName  = "egress-cluster"
-	ingressClusterName = "ingress-cluster"
+	egressClusterName      = "egress-cluster"
+	ingressClusterName     = "ingress-cluster"
+	ktlsIngressClusterName = "ktls-ingress-cluster"
+	ktlsEgressClusterName  = "ktls-egress-cluster"
+	ciliumMuxSocketName    = "cilium.transport_sockets.mux"
 )
 
 // XDSServer provides a high-lever interface to manage resources published
@@ -287,7 +290,7 @@ func StartXDSServer(stateDir string) *XDSServer {
 }
 
 // AddListener adds a listener to a running Envoy proxy.
-func (s *XDSServer) AddListener(name string, kind policy.L7ParserType, _ /*endpointPolicyName*/ string, port uint16, isIngress bool, wg *completion.WaitGroup) {
+func (s *XDSServer) AddListener(name string, kind policy.L7ParserType, port uint16, isIngress bool, wg *completion.WaitGroup) {
 	log.Debugf("Envoy: %s AddListener %s", kind, name)
 
 	s.mutex.Lock()
@@ -327,11 +330,50 @@ func (s *XDSServer) AddListener(name string, kind policy.L7ParserType, _ /*endpo
 	s.listenerMutator.Upsert(ListenerTypeURL, name, listenerConf, []string{"127.0.0.1"}, wg.AddCompletion())
 }
 
+// AddListener adds a listener to a running Envoy proxy.
+func (s *XDSServer) AddKTLSListener(name string, port uint16, ingress bool, wg *completion.WaitGroup) {
+	log.Debugf("Envoy: AddKTLSListener %s (ingress: %v)", name, ingress)
+
+	s.mutex.Lock()
+
+	// Bail out if this listener already exists
+	if _, ok := s.listeners[name]; ok {
+		log.Fatalf("Envoy: Attempt to add existing KTLS listener: %s", name)
+	}
+	s.listeners[name] = true
+
+	s.mutex.Unlock()
+
+	ktlsClusterName := ktlsEgressClusterName
+	if ingress {
+		ktlsClusterName = ktlsIngressClusterName
+	}
+
+	listenerConf := proto.Clone(s.listenerProto).(*envoy_api_v2.Listener)
+	listenerConf.FilterChains = append(listenerConf.FilterChains, proto.Clone(s.tcpFilterChainProto).(*envoy_api_v2_listener.FilterChain))
+	listenerConf.FilterChains[0].TransportSocket = &envoy_api_v2_core.TransportSocket{Name: ciliumMuxSocketName}
+	listenerConf.FilterChains[0].FilterChainMatch = &envoy_api_v2_listener.FilterChainMatch{ApplicationProtocols: []string{"tcp"}}
+	listenerConf.FilterChains[0].Filters[1].ConfigType.(*envoy_api_v2_listener.Filter_Config).Config.Fields["cluster"] = &structpb.Value{Kind: &structpb.Value_StringValue{StringValue: ktlsClusterName}}
+
+	listenerConf.FilterChains = append(listenerConf.FilterChains, proto.Clone(s.httpFilterChainProto).(*envoy_api_v2_listener.FilterChain))
+	listenerConf.FilterChains[1].TransportSocket = &envoy_api_v2_core.TransportSocket{Name: ciliumMuxSocketName}
+	listenerConf.FilterChains[1].Filters[1].ConfigType.(*envoy_api_v2_listener.Filter_Config).Config.Fields["route_config"].GetStructValue().Fields["virtual_hosts"].GetListValue().Values[0].GetStructValue().Fields["routes"].GetListValue().Values[0].GetStructValue().Fields["route"].GetStructValue().Fields["cluster"] = &structpb.Value{Kind: &structpb.Value_StringValue{StringValue: ktlsClusterName}}
+
+	listenerConf.Name = name
+	listenerConf.Address.GetSocketAddress().PortSpecifier = &envoy_api_v2_core.SocketAddress_PortValue{PortValue: uint32(port)}
+	if ingress {
+		listenerConf.ListenerFilters[0].ConfigType.(*envoy_api_v2_listener.ListenerFilter_Config).Config.Fields["is_ingress"].GetKind().(*structpb.Value_BoolValue).BoolValue = true
+	}
+	listenerConf.ListenerFilters[0].ConfigType.(*envoy_api_v2_listener.ListenerFilter_Config).Config.Fields["use_kTLS"] = &structpb.Value{Kind: &structpb.Value_BoolValue{BoolValue: true}}
+
+	s.listenerMutator.Upsert(ListenerTypeURL, name, listenerConf, []string{"127.0.0.1"}, nil)
+}
+
 // RemoveListener removes an existing Envoy Listener.
 func (s *XDSServer) RemoveListener(name string, wg *completion.WaitGroup) xds.AckingResourceMutatorRevertFunc {
 	s.mutex.Lock()
 	log.Debugf("Envoy: removeListener %s", name)
-	if iskTLS, ok := s.listeners[name]; !ok || iskTLS {
+	if _, ok := s.listeners[name]; !ok {
 		// Bail out if this listener does not exist
 		log.Fatalf("Envoy: Attempt to remove non-existent listener: %s", name)
 	}
@@ -451,6 +493,24 @@ func createBootstrap(filePath string, name, cluster, version string, xdsSock, eg
 					CleanupInterval:   &duration.Duration{Seconds: connectTimeout, Nanos: 500000000},
 					LbPolicy:          envoy_api_v2.Cluster_ORIGINAL_DST_LB,
 					ProtocolSelection: envoy_api_v2.Cluster_USE_DOWNSTREAM_PROTOCOL,
+				},
+				{
+					Name:              ktlsEgressClusterName,
+					Type:              envoy_api_v2.Cluster_ORIGINAL_DST,
+					ConnectTimeout:    &duration.Duration{Seconds: connectTimeout, Nanos: 0},
+					CleanupInterval:   &duration.Duration{Seconds: connectTimeout, Nanos: 500000000},
+					LbPolicy:          envoy_api_v2.Cluster_ORIGINAL_DST_LB,
+					ProtocolSelection: envoy_api_v2.Cluster_USE_DOWNSTREAM_PROTOCOL,
+					TransportSocket:   &envoy_api_v2_core.TransportSocket{Name: ciliumMuxSocketName},
+				},
+				{
+					Name:              ktlsIngressClusterName,
+					Type:              envoy_api_v2.Cluster_ORIGINAL_DST,
+					ConnectTimeout:    &duration.Duration{Seconds: connectTimeout, Nanos: 0},
+					CleanupInterval:   &duration.Duration{Seconds: connectTimeout, Nanos: 500000000},
+					LbPolicy:          envoy_api_v2.Cluster_ORIGINAL_DST_LB,
+					ProtocolSelection: envoy_api_v2.Cluster_USE_DOWNSTREAM_PROTOCOL,
+					TransportSocket:   &envoy_api_v2_core.TransportSocket{Name: ciliumMuxSocketName},
 				},
 				{
 					Name:           "xds-grpc-cilium",

@@ -24,6 +24,7 @@ import (
 	"github.com/cilium/cilium/api/v1/models"
 	"github.com/cilium/cilium/pkg/completion"
 	"github.com/cilium/cilium/pkg/envoy"
+	"github.com/cilium/cilium/pkg/identity"
 	"github.com/cilium/cilium/pkg/lock"
 	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/logging/logfields"
@@ -31,6 +32,7 @@ import (
 	"github.com/cilium/cilium/pkg/metrics"
 	"github.com/cilium/cilium/pkg/node"
 	"github.com/cilium/cilium/pkg/policy"
+	"github.com/cilium/cilium/pkg/proxy/accesslog"
 	"github.com/cilium/cilium/pkg/proxy/logger"
 	"github.com/cilium/cilium/pkg/revert"
 
@@ -106,7 +108,7 @@ func StartProxySupport(minPort uint16, maxPort uint16, stateDir string,
 
 	envoy.StartAccessLogServer(stateDir, xdsServer, DefaultEndpointInfoRegistry)
 
-	return &Proxy{
+	proxy := &Proxy{
 		XDSServer:      xdsServer,
 		stateDir:       stateDir,
 		rangeMin:       minPort,
@@ -114,6 +116,12 @@ func StartProxySupport(minPort uint16, maxPort uint16, stateDir string,
 		redirects:      make(map[string]*Redirect),
 		allocatedPorts: make(map[uint16]struct{}),
 	}
+
+	// Start Envoy kTLS Egress listener.
+
+	proxy.CreateKTLSRedirect("ktls-egress", false, 4321)
+
+	return proxy
 }
 
 var (
@@ -146,6 +154,68 @@ func (p *Proxy) allocatePort() (uint16, error) {
 }
 
 var gcOnce sync.Once
+
+type kTLSInfoSource struct {
+	lock.RWMutex
+}
+
+func (m *kTLSInfoSource) UnconditionalRLock() { m.RWMutex.RLock() }
+func (m *kTLSInfoSource) RUnlock()            { m.RWMutex.RUnlock() }
+
+func (m *kTLSInfoSource) GetID() uint64                         { return 0 }
+func (m *kTLSInfoSource) GetIPv4Address() string                { return "" }
+func (m *kTLSInfoSource) GetIPv6Address() string                { return "" }
+func (m *kTLSInfoSource) GetLabels() []string                   { return []string{} }
+func (m *kTLSInfoSource) GetIdentity() identity.NumericIdentity { return 0 }
+func (m *kTLSInfoSource) GetLabelsSHA() string                  { return "" }
+func (m *kTLSInfoSource) HasSidecarProxy() bool                 { return false }
+
+func (m *kTLSInfoSource) OnProxyPolicyUpdate(policyRevision uint64) {}
+func (m *kTLSInfoSource) UpdateProxyStatistics(l7Protocol string, port uint16, ingress, request bool,
+	verdict accesslog.FlowVerdict) {
+}
+
+var kTLSEP kTLSInfoSource
+
+func (p *Proxy) CreateKTLSRedirect(id string, ingress bool, port uint16) {
+	gcOnce.Do(func() {
+		go func() {
+			for {
+				time.Sleep(10 * time.Second)
+				if deleted := proxymap.GC(); deleted > 0 {
+					log.WithField("count", deleted).
+						Debug("Evicted entries from proxy table")
+				}
+			}
+		}()
+	})
+
+	p.mutex.Lock()
+	defer func() {
+		p.UpdateRedirectMetrics()
+		p.mutex.Unlock()
+	}()
+
+	scopedLog := log.WithField(fieldProxyRedirectID, id)
+
+	redir := newRedirect(&kTLSEP, id)
+	redir.endpointID = 0
+	redir.ingress = ingress
+	redir.parserType = "ktls"
+	redir.ProxyPort = port
+
+	var err error
+	redir.implementation, err = createEnvoyRedirect(redir, p.stateDir, p.XDSServer, nil)
+	if err != nil {
+		scopedLog.WithError(err).Warning("Unable to create kTLS proxy!")
+	} else {
+		scopedLog.WithField(logfields.Object, logfields.Repr(redir)).
+			Debug("Created new kTLS proxy instance")
+
+		p.allocatedPorts[port] = struct{}{}
+		p.redirects[id] = redir
+	}
+}
 
 // CreateOrUpdateRedirect creates or updates a L4 redirect with corresponding
 // proxy configuration. This will allocate a proxy port as required and launch
