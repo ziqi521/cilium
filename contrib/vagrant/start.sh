@@ -294,7 +294,7 @@ function write_cilium_cfg() {
         cilium_options+=" --kvstore-opt etcd.config=/var/lib/cilium/etcd-config.yml"
     else
         if [[ "${IPV4}" -eq "1" ]]; then
-            cilium_options+=" --kvstore-opt consul.address=${MASTER_IPV4}:8500"
+            cilium_options+=" --kvstore-opt consul.address=127.0.0.1:8500"
         else
             cilium_options+=" --kvstore-opt consul.address=[${ipv6_addr}]:8500"
         fi
