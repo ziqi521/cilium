@@ -75,6 +75,7 @@ func (s *EnvoySuite) TestEnvoy(c *C) {
 	}
 
 	flowdebug.Enable()
+	EnableTracing()
 
 	stateLogDir, err := ioutil.TempDir("", "envoy_go_test")
 	c.Assert(err, IsNil)
