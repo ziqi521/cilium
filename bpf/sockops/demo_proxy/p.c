@@ -204,7 +204,7 @@ int proxy_glue(int cfd, int pfd, int recv, struct msghdr *msg, char *type, struc
 			txmsg.msg_iov[0].iov_base = pkt_ptr;
 			txmsg.msg_iov[0].iov_len = key->size;
 		}
-		printf("%s: recv %i: key %i %i %i (%i.%i) %i %i %i\n", type, recv, key->sport, key->dport, key->family, key->pad7, key->pad8, key->sip4, key->dip4, key->size);
+		printf("%s: recv %i: key %i %i %i (%i.%i) %x %x %i\n", type, recv, key->sport, key->dport, key->family, key->pad7, key->pad8, ntohl(key->sip4), ntohl(key->dip4), key->size);
 
 		if (recv < key->size) {// need more data
 			printf("more data needed\n");
