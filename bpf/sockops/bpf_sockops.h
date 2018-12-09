@@ -18,7 +18,7 @@
 
 #include "sockops_config.h"
 
-#define SFD_PORT 443
+#define SFD_PORT 8077
 
 /* Structure representing an L7 sock */
 struct sock_key {
