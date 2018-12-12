@@ -1,7 +1,7 @@
 #
 # cilium-envoy from github.com/cilium/proxy
 #
-FROM quay.io/cilium/cilium-envoy:d23e7973c655c79453222568f39392c7e8c89ad9 as cilium-envoy
+FROM quay.io/cilium/cilium-envoy:384b6dc616f239180d3077a43e1eba902f4a7b89 as cilium-envoy
 
 #
 # Cilium incremental build. Should be fast given builder-deps is up-to-date!
