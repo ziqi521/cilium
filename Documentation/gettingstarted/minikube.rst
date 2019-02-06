@@ -33,6 +33,10 @@ Install kubectl & minikube
 
      minikube start --network-plugin=cni --memory=4096
 
+.. note:: The minikube node may have a taint set for NoSchedule. Please run ``kubectl describe node minikube | grep Taints``. If you find a ``NoSchedule`` taint you can remove using the command ``kubectl taint nodes minikube  node.kubernetes.io/not-ready:NoSchedule-`
+
+.. note:: The ``core-dns`` pods will be not completely initialized since they are waiting for the CNI to be installed. Please proceed to the next step and ``core-dns`` pods will be in running state after installing Cilium.
+
 Install Cilium
 ==============
 
