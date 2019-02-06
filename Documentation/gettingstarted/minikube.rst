@@ -18,7 +18,7 @@ that run on Linux, macOS, and Windows.
 Install kubectl & minikube
 ==========================
 
-1. Install ``kubectl`` version >= v1.8.0 as described in the `Kubernetes Docs <https://kubernetes.io/docs/tasks/tools/install-kubectl/>`_.
+1. Install ``kubectl`` version >= v1.8.0 as described in the `Kubernetes Docs <https://kubernetes.io/docs/tasks/tools/install-kubectl/>`_`.
 
 2. Install ``minikube`` >= v0.33.1 as per minikube documentation: `Install Minikube <https://kubernetes.io/docs/tasks/tools/install-minikube/>`_.
 
@@ -33,7 +33,7 @@ Install kubectl & minikube
 
      minikube start --network-plugin=cni --memory=4096
 
-.. note:: The minikube node may have a taint set for NoSchedule. Please run ``kubectl describe node minikube | grep Taints``. If you find a ``NoSchedule`` taint you can remove using the command ``kubectl taint nodes minikube  node.kubernetes.io/not-ready:NoSchedule-`
+.. note:: The minikube node may have a taint set for NoSchedule. Please run ``kubectl describe node minikube | grep Taints``. If you find a ``NoSchedule`` taint you can remove using the command ``kubectl taint nodes minikube  node.kubernetes.io/not-ready:NoSchedule-``
 
 .. note:: The ``core-dns`` pods will be not completely initialized since they are waiting for the CNI to be installed. Please proceed to the next step and ``core-dns`` pods will be in running state after installing Cilium.
 
