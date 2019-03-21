@@ -15,10 +15,9 @@
 package policy
 
 import (
-	"github.com/cilium/cilium/pkg/identity"
 	"github.com/cilium/cilium/pkg/policy/api"
+	"github.com/cilium/cilium/pkg/policy/trafficdirection"
 	"github.com/cilium/cilium/pkg/u8proto"
-	"github.com/cilium/cilium/pkg/uuid"
 )
 
 type UUID string
@@ -32,20 +31,48 @@ type IdentityPolicy struct {
 // selectors. If empty, no identities are whitelisted. In policy=always mode,
 // this would drop everything, policy=auto and k8s mode, this will translate
 // into default allow.
-type DirectionalPolicy map[int]IdentityPortSelector // L3 allowed identities for ingress/egress.
+// Key is Port/Protocol
+type DirectionalPolicy map[uint32]*IdentityPortPolicy // L3 allowed identities for ingress/egress.
 
-type IdentityPortSelector struct {
+func portPolicyKey(port uint16, proto u8proto.U8proto) uint32 {
+	return uint32(port) | uint32(proto)<<16
+}
+
+func (ip *IdentityPolicy) getIdentityPortPolicy(port uint16, proto u8proto.U8proto, dir trafficdirection.TrafficDirection) *IdentityPortPolicy {
+	key := portPolicyKey(port, proto)
+	if dir == trafficdirection.Egress {
+		return ip.Egress[key]
+	}
+	return ip.Ingress[key]
+}
+
+func (ip *IdentityPolicy) putIdentityPortPolicy(policy *IdentityPortPolicy) {
+	key := portPolicyKey(policy.Port, policy.Protocol)
+	if policy.Direction == trafficdirection.Egress {
+		ip.Egress[key] = policy
+	}
+	ip.Ingress[key] = policy
+}
+
+type IdentityPortPolicy struct {
+	// handler owns this policy.
+	// Immutable
+	handler *identityPolicyHandler
+
 	//  Port is the L4, if not set, all ports apply
 	// +optional
+	// Immutable
 	Port uint16
 
-	// Porotocol is the L4 protocol, if not set, all protocols apply
+	// Protocol is the L4 protocol, if not set, all protocols apply
 	// +optional
+	// Immutable
 	Protocol u8proto.U8proto
 
-	// L7 policy
-	// +optional
-	L7 L7Policy
+	// Direction is either Ingress or Egress
+	// Incoming identity updates need this
+	// Immutable
+	Direction trafficdirection.TrafficDirection
 
 	// AllowedIdentities is the list of referenced identity selectors.
 	// Identity selectors are shared between all IdentityPolicy instances.
@@ -53,7 +80,7 @@ type IdentityPortSelector struct {
 	// The IdentitySelector pointer is used as a key. As duplicate usage of
 	// the same IdentitySelector instances means that the identiy selector
 	// is identical so the selection is guaranteed to be identical
-	AllowedIdentities map[*IdentitySelector]AllowedIdentity
+	AllowedIdentities map[IdentitySelector]*AllowedIdentity
 
 	// ContributingRules is the list of rule UUIDs that cause this identity
 	// to be whitelisted
@@ -64,39 +91,22 @@ type IdentityPortSelector struct {
 // more rules as selected by the IdentityPolicy which is owning this
 // AllowedIdentity
 type AllowedIdentity struct {
-	PortSelector      *IdentityPortSelector
 	ContributingRules []UUID
-	Selector          *IdentitySelector
+	// L7Policy for this IdentitySelector in this IdentityPortSelector
+	L7Policy *api.L7Rules
+	Selector IdentitySelector
 }
 
-type L7Policy struct {
-	ContributingRules []UUID
-	Rules             *api.L7Rules
-}
+// IdentitySelectorUpdated notifies the policy handler about an updated IdentitySelector
+// Called while the global IdentitySelector write lock is held to ensure
+func (ipp *IdentityPortPolicy) IdentitySelectorUpdated(event *identityUpdateEvent) {
+	// Caller has initialized 'selector', 'adds', and 'dels'.
+	// Fill in the identifying fields. Do not use a pointer here, as
+	// a policy change could remove this port selector before this change is
+	// processed, and we must not cause datapath updates to be generated in that case!
+	event.port = ipp.Port
+	event.protocol = ipp.Protocol
+	event.direction = ipp.Direction
 
-// --- ^^ incremental rule layer ^^ --
-
-type IdentitySelector interface {
-}
-
-// IdentitySelector represents the mapping of an EndpointSelectorSlice to a
-// slice of identities
-type LabelIdentitySelector struct {
-	Referals        map[*AllowedIdentity]struct{}
-	Selector        api.EndpointSelectorSlice // incremental rule layer
-	CachedSelection []*identity.Identity      // map to identity layer
-}
-
-type FQDNSelector struct {
-	Referals        map[*AllowedIdentity]struct{}
-	Selector        api.EndpointSelectorSlice     // fqdn:isovalent.com
-	CachedSelection map[string]*identity.Identity // identity.String(): "cidr:1.1.1.1" -> identity of 1.1.1.1
-}
-
-// GetIdentitySelector returns the identity selector for a particular
-// EndpointSelectorSlice. If an IdentitySelector with an identical
-// EndpointSelectorSlice already exists, that IdentitySelector is returned, if
-// it does not exist, it is created and added to the cache.
-func GetIdentitySelector(selector api.EndpointSelectorSlice) *IdentitySelector {
-	return nil
+	ipp.handler.events <- event
 }

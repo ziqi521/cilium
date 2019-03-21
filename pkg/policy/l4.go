@@ -30,7 +30,11 @@ import (
 	"github.com/cilium/cilium/pkg/u8proto"
 )
 
-// L7DataMap contains a map of L7 rules per endpoint where key is a hash of EndpointSelector
+// L7DataMap contains a map of L7 rules per endpoint where key is
+// api.EndpointSelector. Note that two different keys can represent
+// the same selector, because api.EndpointSelector only contains
+// pointers, so it is possible two different api.EndpointSelector's
+// point to equal label selectors and/or requirements.
 type L7DataMap map[api.EndpointSelector]api.L7Rules
 
 func (l7 L7DataMap) MarshalJSON() ([]byte, error) {

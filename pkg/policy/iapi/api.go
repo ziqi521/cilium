@@ -16,6 +16,7 @@ package iapi
 
 import (
 	"github.com/cilium/cilium/pkg/identity"
+	"github.com/cilium/cilium/pkg/policy/api"
 	"github.com/cilium/cilium/pkg/policy/trafficdirection"
 	"github.com/cilium/cilium/pkg/u8proto"
 )
@@ -162,5 +163,5 @@ type DatapathDelta struct {
 	// anyone after being exposed in any DatapathDelta.
 	//
 	// Not applicable on 'Flush' operation.
-	L7 *api.L7Rules
+	L7Policy *api.L7Rules
 }

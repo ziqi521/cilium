@@ -20,6 +20,8 @@ import (
 	"github.com/cilium/cilium/pkg/identity"
 	"github.com/cilium/cilium/pkg/lock"
 	"github.com/cilium/cilium/pkg/policy/iapi"
+	"github.com/cilium/cilium/pkg/policy/trafficdirection"
+	"github.com/cilium/cilium/pkg/u8proto"
 )
 
 var (
@@ -67,12 +69,13 @@ type identityPolicyHandler struct {
 	// coalesced together if the 'updates' channel is blocking.
 	nextTransaction iapi.DatapathUpdateTransaction
 
-	// nextTransactionIsComplete indicates if the nextTransaction
-	// is ready to be sent on the 'updates' channel or not.
-	nextTransactionIsComplete bool
-
 	// Set of subscriptions on this identity
 	subscriptions map[*subscription]struct{}
+
+	//
+	// Incremental policy for this handler
+	//
+	policy IdentityPolicy
 }
 
 //
@@ -116,6 +119,19 @@ type nackRevisionEvent struct {
 	revision iapi.PolicyRevision
 
 	err error
+}
+
+// identityUpdateEvents are received when cached numeric identities of an IdentitySelector
+// change. The IdentitySelector is already changed, but this event allows incremental
+// datapath updates to be generated corresponsing to the change.
+// Immutable, i.e., read-only. The slices are potentially sent to multiple handlers!
+type identityUpdateEvent struct {
+	port      uint16
+	protocol  u8proto.U8proto
+	direction trafficdirection.TrafficDirection
+	selector  IdentitySelector
+	adds      []identity.NumericIdentity
+	dels      []identity.NumericIdentity
 }
 
 func newIdentityPolicyHandler(ID identity.NumericIdentity) *identityPolicyHandler {
@@ -170,74 +186,124 @@ func (h *identityPolicyHandler) Subscriptions() ([]iapi.Subscription, error) {
 }
 
 func (h *identityPolicyHandler) handle() {
+	// Always flush the datapath to begin with
+	h.nextTransaction.Deltas = append(h.nextTransaction.Deltas, &iapi.DatapathDelta{Operation: iapi.Flush})
+
+	stop := false
 Loop:
-	for {
+	for !stop {
+		// wait for the first datapath delta to be produced
 		select {
 		case e := <-h.events:
-			switch event := e.(type) {
-
-			//
-			// Internal events
-			//
-
-			case funcEvent:
-				event.fn()
-				close(event.done)
-
-			//
-			// Events from the handler owner (e.g., Identity)
-			//
-
-			case exitEvent:
-				log.Debugf("Identity policy handler for numeric identity %d exiting.", h.ID)
-				h.unsubscribe(nil)
+			if h.handleEvent(e) == false {
 				break Loop
-
-			//
-			// Events from the users (e.g., Endpoint)
-			//
-
-			case subscribeEvent:
-				h.subscribe(event.subscription)
-
-			case unsubscribeEvent:
-				if h.unsubscribe(event.subscription) {
-					break Loop
-				}
-
-			//
-			// Events from the subscribers (e.g., Datapath)
-			//
-
-			case ackRevisionEvent:
-				// Ack must be for more recent revision than the last one,
-				// and not more recent than what has been sent in the updates
-				// channel.
-				if event.revision > event.subscription.realizedRevision &&
-					event.revision <= event.subscription.updatedRevision {
-					event.subscription.realizedRevision = event.revision
-				} else {
-					log.Warningf("Invalid ack revision (%d), previous: %d, last update: %d",
-						event.revision, event.subscription.realizedRevision,
-						event.subscription.updatedRevision)
-					if h.unsubscribe(event.subscription) {
-						break Loop
-					}
-				}
-
-			case nackRevisionEvent:
-				log.Warningf("Datapath policy update failed (revision %d: %s), unsubscribing.",
-					event.revision, event.err)
-				if h.unsubscribe(event.subscription) {
-					break Loop
-				}
-
-			default:
-				log.Warningf("Unknown event type %v", event)
+			}
+			if len(h.nextTransaction.Deltas) == 0 {
+				continue Loop
 			}
 		}
+
+		// Check if there are more events to be processed before issuing a datapath
+		// transaction.
+		select {
+		case e := <-h.events:
+			stop = !h.handleEvent(e)
+		default:
+		}
+
+		h.nextTransaction.Revision++ // XXX
+		for sub := range h.subscriptions {
+			// this may block
+			sub.updates <- h.nextTransaction
+		}
+		// Re-slice to an empty slice
+		h.nextTransaction.Deltas = h.nextTransaction.Deltas[:0]
 	}
 	close(h.done)
+}
+
+// handleEvent returns false if the handler must stop.
+func (h *identityPolicyHandler) handleEvent(e interface{}) bool {
+	switch event := e.(type) {
+
+	//
+	// Identity selector update events
+	//
+
+	case identityUpdateEvent:
+		// locate the identity port selector
+		ipp := h.policy.getIdentityPortPolicy(event.port, event.protocol, event.direction)
+		if ipp == nil {
+			log.Debugf("Port policy for identity update can not be found (%v)", e)
+			break
+		}
+		ai := ipp.AllowedIdentities[event.selector]
+		if ai == nil {
+			log.Debugf("IdentitySelector not used by port policy any more")
+			break
+		}
+		h.appendIdentityUpdateDeltas(ipp, ai, event.adds, event.dels)
+
+	//
+	// Internal events
+	//
+
+	case funcEvent:
+		event.fn()
+		close(event.done)
+
+	//
+	// Events from the handler owner (e.g., Identity)
+	//
+
+	case exitEvent:
+		log.Debugf("Identity policy handler for numeric identity %d exiting.", h.ID)
+		h.unsubscribe(nil)
+		return false
+
+	//
+	// Events from the users (e.g., Endpoint)
+	//
+
+	case subscribeEvent:
+		h.subscribe(event.subscription)
+
+	case unsubscribeEvent:
+		if h.unsubscribe(event.subscription) {
+			return false
+		}
+
+	//
+	// Events from the subscribers (e.g., Datapath)
+	//
+
+	case ackRevisionEvent:
+		// Ack must be for more recent revision than the last one,
+		// and not more recent than what has been sent in the updates
+		// channel.
+		if event.revision > event.subscription.realizedRevision &&
+			event.revision <= event.subscription.updatedRevision {
+			event.subscription.realizedRevision = event.revision
+		} else {
+			log.Warningf("Invalid ack revision (%d), previous: %d, last update: %d",
+				event.revision, event.subscription.realizedRevision,
+				event.subscription.updatedRevision)
+			if h.unsubscribe(event.subscription) {
+				return false
+			}
+		}
+
+	case nackRevisionEvent:
+		log.Warningf("Datapath policy update failed (revision %d: %s), unsubscribing.",
+			event.revision, event.err)
+		if h.unsubscribe(event.subscription) {
+			return false
+		}
+
+	default:
+		log.Warningf("Unknown event type %v", event)
+	}
+	return true
 }
 
 func (h *identityPolicyHandler) subscribe(sub *subscription) {
@@ -266,4 +332,49 @@ func (h *identityPolicyHandler) unsubscribe(sub *subscription) bool {
 		}
 	}
 	return len(h.subscriptions) == 0
+}
+
+// handleIdentityUpdateEvent generates datapath delta updates based on changed identities
+// Called by the policy handler only!
+func (h *identityPolicyHandler) appendIdentityUpdateDeltas(ipp *IdentityPortPolicy, ai *AllowedIdentity, adds, dels []identity.NumericIdentity) {
+	var deletes []identity.NumericIdentity
+	// Make sure we do not delete identities that may have been
+	// added to the policy while this event was queued
+	if len(dels) > 0 {
+		for _, nid := range dels {
+			if !ai.Selector.Caches(nid) {
+				deletes = append(deletes, nid)
+			}
+		}
+	}
+	if len(deletes) > 0 {
+		h.nextTransaction.Deltas = append(h.nextTransaction.Deltas, &iapi.DatapathDelta{
+			Operation:           iapi.Delete,
+			Direction:           ipp.Direction,
+			Port:                ipp.Port,
+			Protocol:            ipp.Protocol,
+			AllowedRemotesDelta: deletes,
+		})
+	}
+
+	var additions []identity.NumericIdentity
+	// Make sure we do not add identities that may have been
+	// deleted from the policy while this event was queued
+	if len(adds) > 0 {
+		for _, nid := range adds {
+			if ai.Selector.Caches(nid) {
+				additions = append(additions, nid)
+			}
+		}
+	}
+	if len(additions) > 0 {
+		h.nextTransaction.Deltas = append(h.nextTransaction.Deltas, &iapi.DatapathDelta{
+			Operation:           iapi.Upsert,
+			Direction:           ipp.Direction,
+			Port:                ipp.Port,
+			Protocol:            ipp.Protocol,
+			AllowedRemotesDelta: additions,
+			L7Policy:            ai.L7Policy,
+		})
+	}
 }
