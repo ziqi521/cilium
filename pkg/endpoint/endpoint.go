@@ -49,6 +49,7 @@ import (
 	"github.com/cilium/cilium/pkg/monitor/notifications"
 	"github.com/cilium/cilium/pkg/option"
 	"github.com/cilium/cilium/pkg/policy"
+	"github.com/cilium/cilium/pkg/policy/iapi"
 	"github.com/cilium/cilium/pkg/policy/trafficdirection"
 	"github.com/cilium/cilium/pkg/proxy/accesslog"
 	"github.com/cilium/cilium/pkg/trigger"
@@ -291,6 +292,8 @@ type Endpoint struct {
 	realizedPolicy *policy.EndpointPolicy
 
 	EventQueue *eventqueue.EventQueue
+
+	PolicySubscription iapi.Subscription `json:"-"`
 
 	///////////////////////
 	// DEPRECATED FIELDS //
@@ -1998,7 +2001,7 @@ func (e *Endpoint) identityLabelsChanged(ctx context.Context, owner Owner, myCha
 
 	readyToRegenerate := false
 
-	// Regeneration is olny triggered once the endpoint ID has been
+	// Regeneration is only triggered once the endpoint ID has been
 	// assigned. This ensures that on the initial creation, the endpoint is
 	// not generated until the endpoint ID has been assigned. If the
 	// identity is resolved before the endpoint ID is assigned, the

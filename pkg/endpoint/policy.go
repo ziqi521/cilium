@@ -551,7 +551,26 @@ func (e *Endpoint) SetIdentity(identity *identityPkg.Identity) {
 		oldIdentity = e.SecurityIdentity.StringID()
 	}
 
+	if identity != e.SecurityIdentity && e.PolicySubscription != nil {
+		e.PolicySubscription.Unsubscribe()
+		e.PolicySubscription = nil
+	}
+
 	e.SecurityIdentity = identity
+
+	if e.PolicySubscription == nil {
+		// Subscribe to policy updates for this Endpoint
+		sub, err := policy.Subscribe(identity.ID, e.StringID())
+		if err != nil {
+			// This may only happen due to trivial logic errors,
+			// so the risk of this happening on runtime is extremely low.
+			e.getLogger().WithFields(logrus.Fields{
+				logfields.Identity: identity.StringID(),
+			}).WithError(err).Fatal("Policy Subscription failed")
+		} else {
+			e.PolicySubscription = sub
+		}
+	}
 
 	// Sets endpoint state to ready if was waiting for identity
 	if e.GetStateLocked() == StateWaitingForIdentity {
