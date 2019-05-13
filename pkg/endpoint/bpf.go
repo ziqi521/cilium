@@ -22,6 +22,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/cilium/cilium/api/v1/models"
@@ -30,6 +31,8 @@ import (
 	"github.com/cilium/cilium/pkg/completion"
 	"github.com/cilium/cilium/pkg/controller"
 	"github.com/cilium/cilium/pkg/datapath/loader"
+	"github.com/cilium/cilium/pkg/envoy"
+	"github.com/cilium/cilium/pkg/ipcache"
 	"github.com/cilium/cilium/pkg/loadinfo"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	bpfconfig "github.com/cilium/cilium/pkg/maps/configmap"
@@ -49,6 +52,10 @@ import (
 const (
 	// EndpointGenerationTimeout specifies timeout for proxy completion context
 	EndpointGenerationTimeout = 330 * time.Second
+)
+
+var (
+	setxDSCache sync.Once
 )
 
 // PolicyMapPathLocked returns the path to the policy map of endpoint.
@@ -169,6 +176,13 @@ func (e *Endpoint) addNewRedirectsFromMap(owner Owner, m policy.L4PolicyMap, des
 			// container. If running in a sidecar container, just allow traffic
 			// to the port at L4 by setting the proxy port to 0.
 			if !e.hasSidecarProxy || l4.L7Parser != policy.ParserTypeHTTP {
+				setxDSCache.Do(func() {
+					ipcache.IPIdentityCache.SetListeners([]ipcache.IPIdentityMappingListener{
+						&envoy.NetworkPolicyHostsCache,
+					})
+					ipcache.IPIdentityCache.DumpToListenerLocked(&envoy.NetworkPolicyHostsCache)
+				},
+				)
 				var finalizeFunc revert.FinalizeFunc
 				var revertFunc revert.RevertFunc
 				redirectPort, err, finalizeFunc, revertFunc = owner.UpdateProxyRedirect(e, &l4, proxyWaitGroup)

@@ -69,6 +69,10 @@ func NewListener(d datapath) *BPFListener {
 	return newListener(ipcacheMap.IPCache, d)
 }
 
+func (l *BPFListener) UpsertIdentitiesCache(f map[identity.NumericIdentity]map[string]bool) {
+
+}
+
 // OnIPIdentityCacheChange is called whenever there is a change of state in the
 // IPCache (pkg/ipcache).
 // TODO (FIXME): GH-3161.

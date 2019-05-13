@@ -42,6 +42,9 @@ type IPIdentityMappingListener interface {
 	OnIPIdentityCacheChange(modType CacheModification, cidr net.IPNet, oldHostIP, newHostIP net.IP,
 		oldID *identity.NumericIdentity, newID identity.NumericIdentity, encryptKey uint8)
 
+	// UpsertIdentitiesCache
+	UpsertIdentitiesCache(f map[identity.NumericIdentity]map[string]bool)
+
 	// OnIPIdentityCacheGC will be called to sync other components which are
 	// reliant upon the IPIdentityCache with the IPIdentityCache.
 	OnIPIdentityCacheGC()

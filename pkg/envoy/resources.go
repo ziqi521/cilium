@@ -59,6 +59,53 @@ func (cache *NPHDSCache) OnIPIdentityCacheGC() {
 	// We don't have anything to synchronize in this case.
 }
 
+// UpsertIdentitiesCache
+func (cache *NPHDSCache) UpsertIdentitiesCache(f map[identity.NumericIdentity]map[string]bool) {
+	for idty, cidrs := range f {
+		resourceName := idty.StringID()
+		msg, err := cache.Lookup(NetworkPolicyHostsTypeURL, resourceName)
+		if err != nil {
+			scopedLog := log.WithFields(logrus.Fields{
+				logfields.Identity: idty,
+			})
+			scopedLog.WithError(err).Warning("Can't lookup NPHDS cache")
+			return
+		}
+
+		var hostAddresses map[string]bool
+		if msg == nil {
+			hostAddresses = make(map[string]bool, len(cidrs))
+		} else {
+			// If the resource already exists, create a copy of it and insert
+			// the new IP address into its HostAddresses list.
+			npHost := msg.(*envoyAPI.NetworkPolicyHosts)
+			hostAddresses = make(map[string]bool, len(npHost.HostAddresses))
+			for k := range npHost.HostAddresses {
+				hostAddresses[k] = true
+			}
+		}
+		for newCidr := range cidrs {
+			hostAddresses[newCidr] = true
+		}
+
+		newNpHost := envoyAPI.NetworkPolicyHosts{
+			Policy:        uint64(idty),
+			HostAddresses: hostAddresses,
+		}
+		if err := newNpHost.Validate(); err != nil {
+			scopedLog := log.WithFields(logrus.Fields{
+				logfields.IPAddr:   cidrs,
+				logfields.Identity: idty,
+			})
+			scopedLog.WithError(err).WithFields(logrus.Fields{
+				logfields.XDSResource: newNpHost,
+			}).Warning("Could not validate NPHDS resource update on upsert")
+			return
+		}
+		cache.Upsert(NetworkPolicyHostsTypeURL, resourceName, &newNpHost, false)
+	}
+}
+
 // OnIPIdentityCacheChange pushes modifications to the IP<->Identity mapping
 // into the Network Policy Host Discovery Service (NPHDS).
 func (cache *NPHDSCache) OnIPIdentityCacheChange(modType ipcache.CacheModification, cidr net.IPNet,

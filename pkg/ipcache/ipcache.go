@@ -354,6 +354,26 @@ func (ipc *IPCache) DumpToListenerLocked(listener IPIdentityMappingListener) {
 	}
 }
 
+// DumpToListenerLocked dumps the entire contents of the IPCache by triggering
+// the listener's "OnIPIdentityCacheChange" method for each entry in the cache.
+func (ipc *IPCache) DumpToListener(listener IPIdentityMappingListener) {
+	ipc.RLock()
+	defer ipc.RUnlock()
+	m := make(map[identity.NumericIdentity]map[string]bool, len(ipc.ipToIdentityCache))
+	for ip, idty := range ipc.ipToIdentityCache {
+		_, cidr, err := net.ParseCIDR(ip)
+		if err != nil {
+			endpointIP := net.ParseIP(ip)
+			cidr = endpointIPToCIDR(endpointIP)
+		}
+		if _, ok := m[idty.ID]; !ok {
+			m[idty.ID] = map[string]bool{}
+		}
+		m[idty.ID][cidr.String()] = true
+	}
+	listener.UpsertIdentitiesCache(m)
+}
+
 // deleteLocked removes removes the provided IP-to-security-identity mapping
 // from ipc with the assumption that the IPCache's mutex is held.
 func (ipc *IPCache) deleteLocked(ip string, source Source) {
