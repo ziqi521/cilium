@@ -330,6 +330,13 @@ required = [
   # on-revision = ""
 
 [[constraint]]
+  name = "github.com/json-iterator/go"
+  revision = "v1.1.6"
+
+  # main-usage = "pkg/uuid"
+  # on-revision = ""
+
+[[constraint]]
   name = "github.com/pborman/uuid"
   revision = "v1.2.0"
 

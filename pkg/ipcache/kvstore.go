@@ -16,7 +16,6 @@ package ipcache
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"path"
@@ -29,8 +28,11 @@ import (
 	"github.com/cilium/cilium/pkg/lock"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 
+	"github.com/json-iterator/go"
 	"github.com/sirupsen/logrus"
 )
+
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 const (
 	// DefaultAddressSpace is the address space used if none is provided.

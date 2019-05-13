@@ -718,12 +718,11 @@
   revision = "c2b33e84"
 
 [[projects]]
-  digest = "1:8e36686e8b139f8fe240c1d5cf3a145bc675c22ff8e707857cdd3ae17b00d728"
+  digest = "1:4e903242fe176238aaa469f59d7035f5abf2aa9acfefb8964ddd203651b574e9"
   name = "github.com/json-iterator/go"
   packages = ["."]
   pruneopts = "NUT"
-  revision = "1624edc4454b8682399def8740d46db5e4362ba4"
-  version = "v1.1.5"
+  revision = "v1.1.6"
 
 [[projects]]
   branch = "master"
@@ -1818,6 +1817,7 @@
     "github.com/hashicorp/go-immutable-radix",
     "github.com/hashicorp/go-version",
     "github.com/jessevdk/go-flags",
+    "github.com/json-iterator/go",
     "github.com/kevinburke/ssh_config",
     "github.com/kr/pretty",
     "github.com/mattn/go-shellwords",
