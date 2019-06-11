@@ -15,13 +15,21 @@
 package endpoint
 
 import (
+	"fmt"
 	"io/ioutil"
 	"path/filepath"
 	"strings"
 
-	"github.com/cilium/cilium/common"
-	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/sirupsen/logrus"
+
+	"github.com/cilium/cilium/common"
+	"github.com/cilium/cilium/pkg/controller"
+	"github.com/cilium/cilium/pkg/fqdn"
+	"github.com/cilium/cilium/pkg/identity"
+	pkgLabels "github.com/cilium/cilium/pkg/labels"
+	"github.com/cilium/cilium/pkg/logging/logfields"
+	"github.com/cilium/cilium/pkg/option"
+	"github.com/cilium/cilium/pkg/policy"
 )
 
 // ReadEPsFromDirNames returns a mapping of endpoint ID to endpoint of endpoints
@@ -70,7 +78,7 @@ func ReadEPsFromDirNames(owner Owner, basePath string, eptsDirNames []string) ma
 			scopedLog.WithError(err).Warn("Unable to read the C header file")
 			continue
 		}
-		ep, err := ParseEndpoint(owner.GetPolicyRepository(), strEp)
+		ep, err := parseEndpoint(owner.GetPolicyRepository(), strEp)
 		if err != nil {
 			scopedLog.WithError(err).Warn("Unable to parse the C header file")
 			continue
@@ -86,4 +94,50 @@ func ReadEPsFromDirNames(owner Owner, basePath string, eptsDirNames []string) ma
 		}
 	}
 	return possibleEPs
+}
+
+// parseEndpoint parses the given strEp which is in the form of:
+// common.CiliumCHeaderPrefix + common.Version + ":" + endpointBase64
+func parseEndpoint(repo *policy.Repository, strEp string) (*Endpoint, error) {
+	// TODO: Provide a better mechanism to update from old version once we bump
+	// TODO: cilium version.
+	strEpSlice := strings.Split(strEp, ":")
+	if len(strEpSlice) != 2 {
+		return nil, fmt.Errorf("invalid format %q. Should contain a single ':'", strEp)
+	}
+	ep := Endpoint{
+		OpLabels:   pkgLabels.NewOpLabels(),
+		DNSHistory: fqdn.NewDNSCacheWithLimit(option.Config.ToFQDNsMinTTL, option.Config.ToFQDNsMaxIPsPerHost),
+	}
+	if err := parseBase64ToEndpoint(strEpSlice[1], &ep); err != nil {
+		return nil, fmt.Errorf("failed to parse base64toendpoint: %s", err)
+	}
+
+	// Validate the options that were parsed
+	ep.SetDefaultOpts(ep.Options)
+
+	// Initialize fields to values which are non-nil that are not serialized.
+	ep.hasBPFProgram = make(chan struct{}, 0)
+	ep.desiredPolicy = policy.NewEndpointPolicy(repo)
+	ep.realizedPolicy = ep.desiredPolicy
+	ep.controllers = controller.NewManager()
+
+	// We need to check for nil in Status, CurrentStatuses and Log, since in
+	// some use cases, status will be not nil and Cilium will eventually
+	// error/panic if CurrentStatus or Log are not initialized correctly.
+	// Reference issue GH-2477
+	if ep.Status == nil || ep.Status.CurrentStatuses == nil || ep.Status.Log == nil {
+		ep.Status = NewEndpointStatus()
+	}
+
+	if ep.SecurityIdentity == nil {
+		ep.SetIdentity(identity.LookupReservedIdentity(identity.ReservedIdentityInit))
+	} else {
+		ep.SecurityIdentity.Sanitize()
+	}
+	ep.UpdateLogger(nil)
+
+	ep.SetStateLocked(StateRestoring, "Endpoint restoring")
+
+	return &ep, nil
 }
