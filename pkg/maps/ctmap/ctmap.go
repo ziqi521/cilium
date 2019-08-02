@@ -572,6 +572,21 @@ func WriteBPFMacros(fw io.Writer, e CtEndpoint) {
 	fmt.Fprintf(fw, "#define CT_MAP_SIZE_ANY %d\n", mapEntriesAny)
 }
 
+// WriteNatSize dumps the define for the BPF datapath's SNAT map. Given SNAT
+// depends on the CT map anyway to track connections, this is our implicit
+// upper limit for the mapping table as well.
+func WriteNatSize(fw io.Writer, natSizeDefine string) {
+	var mapEntriesTCP, mapEntriesAny int
+	for _, m := range maps(nil, true, true) {
+		if m.mapType.isTCP() {
+			mapEntriesTCP = mapInfo[m.mapType].maxEntries
+		} else {
+			mapEntriesAny = mapInfo[m.mapType].maxEntries
+		}
+	}
+	fmt.Fprintf(fw, "#define %s %d\n", natSizeDefine, mapEntriesTCP+mapEntriesAny)
+}
+
 // Exists returns false if the CT maps for the specified endpoint (or global
 // maps if nil) are not pinned to the filesystem, or true if they exist or
 // an internal error occurs.
