@@ -126,8 +126,10 @@ static inline bool __revalidate_data(struct __sk_buff *skb, void **data_,
 	if (data + ETH_HLEN + l3_len > data_end)
 		return false;
 
-	*data_ = data;
-	*data_end_ = data_end;
+	/* Verifier workaround: pointer arithmetic on pkt_end prohibited. */
+	WRITE_ONCE(*data_, data);
+	WRITE_ONCE(*data_end_, data_end);
+
 	*l3 = data + ETH_HLEN;
 	return true;
 }
