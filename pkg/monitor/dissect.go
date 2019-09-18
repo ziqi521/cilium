@@ -15,10 +15,12 @@
 package monitor
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"net"
 	"strconv"
+	"sync"
 
 	"github.com/cilium/cilium/pkg/lock"
 	"github.com/cilium/cilium/pkg/logging"
@@ -29,20 +31,22 @@ import (
 )
 
 type parserCache struct {
-	eth     layers.Ethernet
-	ip4     layers.IPv4
-	ip6     layers.IPv6
-	icmp4   layers.ICMPv4
-	icmp6   layers.ICMPv6
-	tcp     layers.TCP
-	udp     layers.UDP
-	decoded []gopacket.LayerType
+	eth      layers.Ethernet
+	ip4      layers.IPv4
+	ip6      layers.IPv6
+	icmp4    layers.ICMPv4
+	icmp6    layers.ICMPv6
+	tcp      layers.TCP
+	udp      layers.UDP
+	fragment gopacket.Fragment
+	decoded  []gopacket.LayerType
 }
 
 var (
 	cache       *parserCache
 	dissectLock lock.Mutex
 	parser      *gopacket.DecodingLayerParser
+	l4Parser    *gopacket.DecodingLayerParser
 
 	log = logging.DefaultLogger.WithField(logfields.LogSubsys, "monitor")
 )
@@ -59,7 +63,8 @@ func initParser() {
 		parser = gopacket.NewDecodingLayerParser(
 			layers.LayerTypeEthernet,
 			&cache.eth, &cache.ip4, &cache.ip6,
-			&cache.icmp4, &cache.icmp6, &cache.tcp, &cache.udp)
+			&cache.icmp4, &cache.icmp6, &cache.tcp, &cache.udp, &cache.fragment)
+		l4Parser = gopacket.NewDecodingLayerParser(layers.LayerTypeTCP, &cache.tcp, &cache.udp)
 	}
 }
 
@@ -91,6 +96,8 @@ func getTCPInfo() string {
 	return info
 }
 
+var once sync.Once
+
 // GetConnectionSummary decodes the data into layers and returns a connection
 // summary in the format:
 //
@@ -101,25 +108,40 @@ func GetConnectionSummary(data []byte) string {
 	defer dissectLock.Unlock()
 
 	initParser()
-	parser.DecodeLayers(data, &cache.decoded)
+	err := parser.DecodeLayers(data, &cache.decoded)
+	if err != nil {
+		fmt.Printf("Hello this is an error!!! %s\n", err)
+	}
 
 	var (
 		srcIP, dstIP     net.IP
+		mf               string
+		ipID             uint16
 		srcPort, dstPort string
 		icmpCode, proto  string
 		hasIP, hasEth    bool
+		fragment         []byte
+		ipProto          layers.IPProtocol
+		isIPFragmented   bool
 	)
 
 	for _, typ := range cache.decoded {
 		switch typ {
+		case gopacket.LayerTypeFragment:
+			fragment = cache.fragment.Payload()
+			cache.fragment.LayerType()
 		case layers.LayerTypeEthernet:
 			hasEth = true
 		case layers.LayerTypeIPv4:
 			hasIP = true
 			srcIP, dstIP = cache.ip4.SrcIP, cache.ip4.DstIP
+			ipProto = cache.ip4.Protocol
+			isIPFragmented = cache.ip4.Flags == layers.IPv4MoreFragments
+			ipID = cache.ip4.Id
 		case layers.LayerTypeIPv6:
 			hasIP = true
 			srcIP, dstIP = cache.ip6.SrcIP, cache.ip6.DstIP
+			ipProto = cache.ip6.NextHeader
 		case layers.LayerTypeTCP:
 			proto = "tcp"
 			srcPort, dstPort = strconv.Itoa(int(cache.tcp.SrcPort)), strconv.Itoa(int(cache.tcp.DstPort))
@@ -136,11 +158,25 @@ func GetConnectionSummary(data []byte) string {
 			icmpCode = cache.icmp6.TypeCode.String()
 		}
 	}
+	if fragment != nil && len(proto) == 0 {
+		switch ipProto {
+		case layers.IPProtocolTCP:
+			proto = "tcp"
+			if isIPFragmented {
+				mf = fmt.Sprintf(" MF=%t ID=%d", isIPFragmented, ipID)
+				srcPort = strconv.Itoa(int(binary.BigEndian.Uint16(fragment[:2])))
+				dstPort = strconv.Itoa(int(binary.BigEndian.Uint16(fragment[2:4])))
+			} else {
+				mf = fmt.Sprintf(" FO=%d ID=%d", cache.ip4.FragOffset, ipID)
+			}
+		default:
+		}
+	}
 
 	switch {
 	case icmpCode != "":
 		return fmt.Sprintf("%s -> %s %s", srcIP, dstIP, icmpCode)
-	case proto != "":
+	case proto != "" && (len(srcPort) != 0 && len(dstPort) != 0):
 		var s string
 
 		if proto == "esp" {
@@ -156,7 +192,14 @@ func GetConnectionSummary(data []byte) string {
 		}
 		return s
 	case hasIP:
-		return fmt.Sprintf("%s -> %s", srcIP, dstIP)
+		s := fmt.Sprintf("%s -> %s", srcIP, dstIP)
+		if len(mf) != 0 {
+			s += mf
+			if proto == "tcp" {
+				s += " " + getTCPInfo()
+			}
+		}
+		return s
 	case hasEth:
 		return fmt.Sprintf("%s -> %s %s", cache.eth.SrcMAC, cache.eth.DstMAC, cache.eth.EthernetType.String())
 	}
