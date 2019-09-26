@@ -290,6 +290,17 @@ func (f *TextFormatter) appendValue(b *bytes.Buffer, value interface{}) {
 	if !ok {
 		stringVal = fmt.Sprint(value)
 	}
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println("aanm: ok =", ok)
+			fmt.Println("aanm: reflect.TypeOf =", reflect.TypeOf(value))
+			fmt.Printf("aanm: reflect.ValueOf = %+v\n", reflect.ValueOf(value))
+			fmt.Printf("aanm: string is %q\n", text)
+			fmt.Println("aanm: stack", r)
+			// still panic to crash cilium-agent
+			panic("aanm: panic in textformatter")
+		}
+	}()
 
 	if !f.needsQuoting(stringVal) {
 		b.WriteString(stringVal)
