@@ -435,7 +435,12 @@ func (a *Allocator) lockedAllocate(ctx context.Context, key AllocatorKey) (idpoo
 		return 0, false, err
 	}
 
-	defer lock.Unlock()
+	defer func() {
+		unlockErr := lock.Unlock()
+		if unlockErr != nil {
+			log.WithError(unlockErr).WithFields(logrus.Fields{"key": k}).Error("error while unlocking lock")
+		}
+	}()
 
 	// fetch first key that matches /value/<key> while ignoring the
 	// node suffix
@@ -783,7 +788,10 @@ func (a *Allocator) RunGC(staleKeysPrevRound map[string]uint64) (map[string]uint
 		pairs, err := kvstore.ListPrefixIfLocked(valueKeyPrefix, lock)
 		if err != nil {
 			log.WithError(err).WithField(fieldPrefix, valueKeyPrefix).Warning("allocator garbage collector was unable to list keys")
-			lock.Unlock()
+			unlockErr := lock.Unlock()
+			if unlockErr != nil {
+				log.WithError(unlockErr).WithFields(logrus.Fields{"key": valueKeyPrefix}).Error("error while unlocking lock")
+			}
 			continue
 		}
 
@@ -814,7 +822,10 @@ func (a *Allocator) RunGC(staleKeysPrevRound map[string]uint64) (map[string]uint
 			}
 		}
 
-		lock.Unlock()
+		unlockErr := lock.Unlock()
+		if unlockErr != nil {
+			log.WithError(unlockErr).WithFields(logrus.Fields{"key": valueKeyPrefix}).Error("error while unlocking lock")
+		}
 	}
 
 	return staleKeys, nil
