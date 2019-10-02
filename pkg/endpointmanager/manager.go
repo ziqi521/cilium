@@ -463,6 +463,15 @@ func RegenerateAllEndpoints(regenMetadata *regeneration.ExternalRegenerationMeta
 	// Dereference "reason" field outside of logging statement; see
 	// https://github.com/sirupsen/logrus/issues/1003.
 	reason := regenMetadata.Reason
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("aanm: reason = %p %+v\n", &reason, reason)
+			fmt.Printf("aanm: regenMetadata = %p %+v\n", &regenMetadata, regenMetadata)
+			fmt.Println("aanm: stack", r)
+			// still panic to crash cilium-agent
+			panic("aanm: panic in RegenerateAllEndpoints")
+		}
+	}()
 	log.WithFields(logrus.Fields{"reason": reason}).Info("regenerating all endpoints")
 	for _, ep := range eps {
 		go func(ep *endpoint.Endpoint) {

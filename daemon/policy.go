@@ -71,6 +71,17 @@ func (d *Daemon) policyUpdateTrigger(reasons []string) {
 	reason := strings.Join(reasons, ", ")
 
 	regenerationMetadata := &regeneration.ExternalRegenerationMetadata{Reason: reason}
+
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("aanm: reason = %p %+v\n", &reason, reason)
+			fmt.Printf("aanm: reasons = %p %+v\n", &reasons, reasons)
+			fmt.Printf("aanm: regenerationMetadata = %p %+v\n", &regenerationMetadata, regenerationMetadata)
+			fmt.Println("aanm: stack", r)
+			// still panic to crash cilium-agent
+			panic("aanm: panic in policyUpdateTrigger")
+		}
+	}()
 	endpointmanager.RegenerateAllEndpoints(regenerationMetadata)
 }
 

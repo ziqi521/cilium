@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -280,6 +281,13 @@ func (f *TextFormatter) appendKeyValue(b *bytes.Buffer, key string, value interf
 	if b.Len() > 0 {
 		b.WriteByte(' ')
 	}
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println("aanm: key =", key)
+			// still panic to crash cilium-agent
+			panic("aanm: panic in appendKeyValue")
+		}
+	}()
 	b.WriteString(key)
 	b.WriteByte('=')
 	f.appendValue(b, value)
@@ -290,6 +298,16 @@ func (f *TextFormatter) appendValue(b *bytes.Buffer, value interface{}) {
 	if !ok {
 		stringVal = fmt.Sprint(value)
 	}
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println("aanm: ok =", ok)
+			fmt.Println("aanm: reflect.TypeOf =", reflect.TypeOf(value))
+			fmt.Println("aanm: value pointer = %p", value)
+			fmt.Println("aanm: stack", r)
+			// still panic to crash cilium-agent
+			panic("aanm: panic in textformatter")
+		}
+	}()
 
 	if !f.needsQuoting(stringVal) {
 		b.WriteString(stringVal)
