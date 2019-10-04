@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"time"
 
 	"github.com/cilium/cilium/pkg/backoff"
@@ -27,12 +28,16 @@ import (
 	"github.com/cilium/cilium/pkg/k8s/types"
 	k8sUtils "github.com/cilium/cilium/pkg/k8s/utils"
 	k8sversion "github.com/cilium/cilium/pkg/k8s/version"
+	"github.com/cilium/cilium/pkg/kvstore"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/metrics"
+	"github.com/cilium/cilium/pkg/node"
+	"github.com/cilium/cilium/pkg/option"
 	"github.com/cilium/cilium/pkg/spanstat"
 
 	"github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
 )
@@ -145,7 +150,7 @@ func (c *CNPStatusUpdateContext) prepareUpdate(cnp *types.SlimCNP, scopedLog *lo
 	return
 }
 
-func (c *CNPStatusUpdateContext) updateStatus(cnp *types.SlimCNP, rev uint64, policyImportErr, waitForEPsErr error) (err error) {
+func (c *CNPStatusUpdateContext) updateStatus(ctx context.Context, cnp *types.SlimCNP, rev uint64, policyImportErr, waitForEPsErr error) (err error) {
 	// Update the status of whether the rule is enforced on this node.  If
 	// we are unable to parse the CNP retrieved from the store, or if
 	// endpoints did not reach the desired policy revision after 30
@@ -154,15 +159,28 @@ func (c *CNPStatusUpdateContext) updateStatus(cnp *types.SlimCNP, rev uint64, po
 		// OK is false here because the policy wasn't imported into
 		// cilium on this node; since it wasn't imported, it also isn't
 		// enforced.
-		err = c.update(cnp, false, false, policyImportErr, rev, cnp.Annotations)
+		if option.Config.K8sEventHandover {
+			err = c.updateViaKvstore(ctx, cnp, false, false, policyImportErr, rev, cnp.Annotations)
+		} else {
+			err = c.update(cnp, false, false, policyImportErr, rev, cnp.Annotations)
+		}
 	} else {
 		// If the deadline by the above context, then not all endpoints
 		// are enforcing the given policy, and waitForEpsErr will be
 		// non-nil.
-		err = c.update(cnp, waitForEPsErr == nil, true, waitForEPsErr, rev, cnp.Annotations)
+		if option.Config.K8sEventHandover {
+			err = c.updateViaKvstore(ctx, cnp, waitForEPsErr == nil, true, waitForEPsErr, rev, cnp.Annotations)
+		} else {
+			err = c.update(cnp, waitForEPsErr == nil, true, waitForEPsErr, rev, cnp.Annotations)
+		}
 	}
 
 	return
+}
+
+func (c *CNPStatusUpdateContext) DeleteFromKvstore(cnp *types.SlimCNP) error {
+	key := formatKeyForKvstore(cnp.Namespace, cnp.Name, node.GetName())
+	return kvstore.Delete(key)
 }
 
 // UpdateStatus updates the status section of a CiliumNetworkPolicy. It will
@@ -222,7 +240,7 @@ retryLoop:
 		// In case of a CNP parse error will update the status in the CNP.
 		serverRule, err = c.prepareUpdate(cnp, scopedLog)
 		if IsErrParse(err) {
-			statusErr := c.updateStatus(serverRule, rev, err, waitForEPsErr)
+			statusErr := c.updateStatus(ctx, serverRule, rev, err, waitForEPsErr)
 			if statusErr != nil {
 				scopedLog.WithError(statusErr).Debug("CNP status for invalid rule cannot be updated")
 			}
@@ -231,7 +249,7 @@ retryLoop:
 			return err
 		}
 
-		err = c.updateStatus(serverRule, rev, policyImportErr, waitForEPsErr)
+		err = c.updateStatus(ctx, serverRule, rev, policyImportErr, waitForEPsErr)
 		scopedLog.WithError(err).WithField("status", serverRule.Status).Debug("CNP status update result from apiserver")
 
 		switch {
@@ -268,14 +286,61 @@ retryLoop:
 	return err
 }
 
-func (c *CNPStatusUpdateContext) update(cnp *types.SlimCNP, enforcing, ok bool, cnpError error, rev uint64, cnpAnnotations map[string]string) error {
+// CNPStatusesPath is the prefix in the kvstore which will contain all keys
+// representing CNPStatus state for all nodes in the cluster.
+var CNPStatusesPath = path.Join(kvstore.BaseKeyPrefix, "state", "cnpstatuses", "v1")
+
+func formatKeyForKvstore(namespace, name, nodeName string) string {
+	return path.Join(CNPStatusesPath, namespace, name, nodeName)
+}
+
+func (c *CNPStatusUpdateContext) updateViaKvstore(ctx context.Context, cnp *types.SlimCNP, enforcing, ok bool, cnpError error, rev uint64, cnpAnnotations map[string]string) error {
 	var (
-		cnpns       cilium_v2.CiliumNetworkPolicyNodeStatus
-		annotations map[string]string
-		err         error
+		err        error
+		kvstoreVal cilium_v2.CiliumNetworkPolicyNodeStatus
 	)
 
-	capabilities := k8sversion.Capabilities()
+	select {
+	case <-kvstore.Client().Connected():
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	if cnpError != nil {
+		kvstoreVal = cilium_v2.CiliumNetworkPolicyNodeStatus{
+			Enforcing:   enforcing,
+			Error:       cnpError.Error(),
+			OK:          ok,
+			LastUpdated: cilium_v2.NewTimestamp(),
+			Annotations: cnpAnnotations,
+		}
+	} else {
+		kvstoreVal = cilium_v2.CiliumNetworkPolicyNodeStatus{
+			Enforcing:   enforcing,
+			Revision:    rev,
+			OK:          ok,
+			LastUpdated: cilium_v2.NewTimestamp(),
+			Annotations: cnpAnnotations,
+		}
+	}
+
+	marshaledVal, err := json.Marshal(kvstoreVal)
+	if err != nil {
+		return err
+	}
+
+	key := formatKeyForKvstore(cnp.Namespace, cnp.Name, node.GetName())
+	log.WithFields(logrus.Fields{
+		"key":   key,
+		"value": marshaledVal,
+	}).Debug("updating CNPStatus in kvstore")
+	_, err = kvstore.Client().UpdateIfDifferent(ctx, key, marshaledVal, true)
+	return err
+
+}
+
+func annotationsByCapabilities(capabilities k8sversion.ServerCapabilities, cnpAnnotations map[string]string) map[string]string {
+	var annotations map[string]string
 
 	switch {
 	case cnpAnnotations == nil:
@@ -285,12 +350,6 @@ func (c *CNPStatusUpdateContext) update(cnp *types.SlimCNP, enforcing, ok bool, 
 		// cnpAnnotations as the CNP, along with these annotations, is not sent to
 		// k8s api-server.
 		annotations = cnpAnnotations
-		lastAppliedConfig, ok := annotations[v1.LastAppliedConfigAnnotation]
-		defer func() {
-			if ok {
-				cnpAnnotations[v1.LastAppliedConfigAnnotation] = lastAppliedConfig
-			}
-		}()
 	default:
 		// for all other k8s versions, sense the CNP is sent with the
 		// annotations we need to make a deepcopy.
@@ -299,6 +358,27 @@ func (c *CNPStatusUpdateContext) update(cnp *types.SlimCNP, enforcing, ok bool, 
 			m[k] = v
 		}
 		annotations = m
+	}
+	return annotations
+}
+
+func (c *CNPStatusUpdateContext) update(cnp *types.SlimCNP, enforcing, ok bool, cnpError error, rev uint64, cnpAnnotations map[string]string) error {
+	var (
+		cnpns cilium_v2.CiliumNetworkPolicyNodeStatus
+	)
+
+	capabilities := k8sversion.Capabilities()
+
+	annotations := annotationsByCapabilities(capabilities, cnpAnnotations)
+
+	switch {
+	case capabilities.Patch:
+		defer func() {
+			lastAppliedConfig, ok := annotations[v1.LastAppliedConfigAnnotation]
+			if ok {
+				cnpAnnotations[v1.LastAppliedConfigAnnotation] = lastAppliedConfig
+			}
+		}()
 	}
 
 	// Ignore LastAppliedConfigAnnotation as it can be really costly to upload
@@ -323,8 +403,16 @@ func (c *CNPStatusUpdateContext) update(cnp *types.SlimCNP, enforcing, ok bool, 
 		}
 	}
 
-	ns := k8sUtils.ExtractNamespace(&cnp.ObjectMeta)
+	return UpdateStatusesByCapabilities(capabilities, k8sUtils.ExtractNamespace(&cnp.ObjectMeta), cnp.GetName(), map[string]cilium_v2.CiliumNetworkPolicyNodeStatus{
+		c.NodeName: cnpns,
+	}, c.CiliumNPClient, cnp)
+}
 
+// nodeStatuses map will be updated in this function; if non-empty, it will contain
+// the set of node status updates which failed / did not occur.
+func UpdateStatusesByCapabilities(capabilities k8sversion.ServerCapabilities, ns, name string, nodeStatuses map[string]cilium_v2.CiliumNetworkPolicyNodeStatus, client clientset.Interface, cnp *types.SlimCNP) error {
+	log.Infof("updateStatusesByCapabilities: namespace=%s, name=%s, nodeStatuses=%+v", ns, name, nodeStatuses)
+	var err error
 	switch {
 	case capabilities.Patch:
 		// This is a JSON Patch [RFC 6902] used to create the `/status/nodes`
@@ -348,9 +436,7 @@ func (c *CNPStatusUpdateContext) update(cnp *types.SlimCNP, enforcing, ok bool, 
 				OP:   "add",
 				Path: "/status",
 				Value: cilium_v2.CiliumNetworkPolicyStatus{
-					Nodes: map[string]cilium_v2.CiliumNetworkPolicyNodeStatus{
-						c.NodeName: cnpns,
-					},
+					Nodes: nodeStatuses,
 				},
 			},
 		}
@@ -361,33 +447,114 @@ func (c *CNPStatusUpdateContext) update(cnp *types.SlimCNP, enforcing, ok bool, 
 			return err
 		}
 
-		_, err = c.CiliumNPClient.CiliumV2().CiliumNetworkPolicies(ns).Patch(cnp.GetName(), k8sTypes.JSONPatchType, createStatusAndNodePatchJSON, "status")
+		_, err = client.CiliumV2().CiliumNetworkPolicies(ns).Patch(name, k8sTypes.JSONPatchType, createStatusAndNodePatchJSON, "status")
+
+		// If the patch fails it means the "test" from the previous patch
+		// failed so we can safely replace the nodes in the CNP status.
 		if err != nil {
-			// If it fails it means the test from the previous patch failed
-			// so we can safely replace this node in the CNP status.
-			createStatusAndNodePatch := []JSONPatch{
-				{
-					OP:    "replace",
-					Path:  "/status/nodes/" + c.NodeName,
-					Value: cnpns,
-				},
+			// If there are more than MaxJSONPatchOperations to patch, do
+			// multiple patches until we have removed all nodes from the set to
+			// update.
+			for len(nodeStatuses) != 0 {
+				var (
+					nodeNamesUsed            []string
+					numPatches               int
+					createStatusAndNodePatch []JSONPatch
+				)
+
+				// Reduce reallocations for slices.
+				if len(nodeStatuses) <= MaxJSONPatchOperations {
+					createStatusAndNodePatch = make([]JSONPatch, 0, len(nodeStatuses))
+				} else {
+					createStatusAndNodePatch = make([]JSONPatch, 0, MaxJSONPatchOperations)
+				}
+
+				for nodeName, nodeStatus := range nodeStatuses {
+
+					if numPatches > MaxJSONPatchOperations {
+						break
+					}
+					nodePatch := JSONPatch{
+						OP:    "replace",
+						Path:  "/status/nodes/" + nodeName,
+						Value: nodeStatus,
+					}
+					createStatusAndNodePatch = append(createStatusAndNodePatch, nodePatch)
+					numPatches += 1
+					// Track which names we've used to delete them from the map
+					// if patching succeeds later.
+					nodeNamesUsed = append(nodeNamesUsed, nodeName)
+				}
+				createStatusAndNodePatchJSON, err = json.Marshal(createStatusAndNodePatch)
+				if err != nil {
+					return err
+				}
+				_, err = client.CiliumV2().CiliumNetworkPolicies(ns).Patch(name, k8sTypes.JSONPatchType, createStatusAndNodePatchJSON, "status")
+
+				if err != nil {
+					break
+				}
+
+				// Patch succeeded, we can remove from the set of NodeStatuses
+				// to update.
+				for i := range nodeNamesUsed {
+					delete(nodeStatuses, nodeNamesUsed[i])
+				}
 			}
-			createStatusAndNodePatchJSON, err = json.Marshal(createStatusAndNodePatch)
-			if err != nil {
-				return err
-			}
-			_, err = c.CiliumNPClient.CiliumV2().CiliumNetworkPolicies(ns).Patch(cnp.GetName(), k8sTypes.JSONPatchType, createStatusAndNodePatchJSON, "status")
 		}
 	case capabilities.UpdateStatus:
-		// k8s < 1.13 as minimal support for JSON patch where kube-apiserver
+		// Get the CNP from K8s so we can update its status. This case occurs
+		// when cilium-operator is updating the CNP and all it has is the
+		// CNP NodeStatus from the key-value store, but not the CNP itself.
+		if cnp == nil {
+			var cnpGetError error
+			cnp, cnpGetError = getSlimCNP(client, ns, name)
+			if cnpGetError != nil {
+				return cnpGetError
+			}
+		}
+		// k8s < 1.13 has minimal support for JSON patch where kube-apiserver
 		// can print Error messages and even panic in k8s < 1.10.
-		cnp.SetPolicyStatus(c.NodeName, cnpns)
-		_, err = c.CiliumNPClient.CiliumV2().CiliumNetworkPolicies(ns).UpdateStatus(cnp.CiliumNetworkPolicy)
+		for nodeName, cnpns := range nodeStatuses {
+			cnp.SetPolicyStatus(nodeName, cnpns)
+		}
+		_, err = client.CiliumV2().CiliumNetworkPolicies(ns).UpdateStatus(cnp.CiliumNetworkPolicy)
 	default:
-		// k8s < 1.13 as minimal support for JSON patch where kube-apiserver
+		// Get the CNP from K8s so we can update its status. This case occurs
+		// when cilium-operator is updating the CNP and all it has is the
+		// CNP NodeStatus from the key-value store, but not the CNP itself.
+		if cnp == nil {
+			var cnpGetError error
+			cnp, cnpGetError = getSlimCNP(client, ns, name)
+			if cnpGetError != nil {
+				return cnpGetError
+			}
+		}
+		// k8s < 1.13 has minimal support for JSON patch where kube-apiserver
 		// can print Error messages and even panic in k8s < 1.10.
-		cnp.SetPolicyStatus(c.NodeName, cnpns)
-		_, err = c.CiliumNPClient.CiliumV2().CiliumNetworkPolicies(ns).Update(cnp.CiliumNetworkPolicy)
+		for nodeName, cnpns := range nodeStatuses {
+			cnp.SetPolicyStatus(nodeName, cnpns)
+		}
+		_, err = client.CiliumV2().CiliumNetworkPolicies(ns).Update(cnp.CiliumNetworkPolicy)
 	}
-	return err
+
+	if err != nil {
+		return err
+	}
+	// Updating succeeded - the updated map can be 'emptied' of updates that
+	// we need to propagate.
+	nodeStatuses = map[string]cilium_v2.CiliumNetworkPolicyNodeStatus{}
+	return nil
+}
+
+func getSlimCNP(client clientset.Interface, ns, name string) (*types.SlimCNP, error) {
+	cnpNonSlim, cnpGetErr := client.CiliumV2().CiliumNetworkPolicies(ns).Get(name, metav1.GetOptions{})
+	if cnpGetErr != nil {
+		return nil, cnpGetErr
+	}
+	cnp := CopyObjToV2CNP(cnpNonSlim)
+	if cnp == nil {
+		return nil, fmt.Errorf("copying CNP to slim CNP failed for CNP %s/%s", ns, name)
+	}
+	return cnp, nil
 }
