@@ -36,6 +36,9 @@ type EndpointPolicy struct {
 	// l4
 	L4 *L4Policy `json:"l4,omitempty"`
 
+	// l4 deny
+	L4Deny *L4Policy `json:"l4-deny,omitempty"`
+
 	// Whether policy enforcement is enabled (ingress, egress, both or none)
 	PolicyEnabled EndpointPolicyEnabled `json:"policy-enabled,omitempty"`
 
@@ -52,6 +55,10 @@ func (m *EndpointPolicy) Validate(formats strfmt.Registry) error {
 	}
 
 	if err := m.validateL4(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateL4Deny(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -93,6 +100,24 @@ func (m *EndpointPolicy) validateL4(formats strfmt.Registry) error {
 		if err := m.L4.Validate(formats); err != nil {
 			if ve, ok := err.(*errors.Validation); ok {
 				return ve.ValidateName("l4")
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *EndpointPolicy) validateL4Deny(formats strfmt.Registry) error {
+
+	if swag.IsZero(m.L4Deny) { // not required
+		return nil
+	}
+
+	if m.L4Deny != nil {
+		if err := m.L4Deny.Validate(formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("l4-deny")
 			}
 			return err
 		}
