@@ -68,3 +68,35 @@ func GetCIDRPrefixes(rules api.Rules) []*net.IPNet {
 	}
 	return res
 }
+
+// GetCIDRDenyPrefixes runs through the specified 'rules' to find every reference
+// to a CIDR in the rules, and returns a slice containing all of these CIDRs.
+// Multiple rules referring to the same CIDR will result in multiple copies of
+// the CIDR in the returned slice.
+//
+// Assumes that validation already occurred on 'rules'.
+func GetCIDRDenyPrefixes(rules api.Rules) []*net.IPNet {
+	if len(rules) == 0 {
+		return nil
+	}
+	res := make([]*net.IPNet, 0, 32)
+	for _, r := range rules {
+		for _, ir := range r.Ingress {
+			if len(ir.FromCIDRDeny) > 0 {
+				res = append(res, getPrefixesFromCIDR(ir.FromCIDRDeny)...)
+			}
+			if len(ir.FromCIDRDenySet) > 0 {
+				res = append(res, GetPrefixesFromCIDRSet(ir.FromCIDRDenySet)...)
+			}
+		}
+		for _, er := range r.Egress {
+			if len(er.ToCIDRDeny) > 0 {
+				res = append(res, getPrefixesFromCIDR(er.ToCIDRDeny)...)
+			}
+			if len(er.ToCIDRDenySet) > 0 {
+				res = append(res, GetPrefixesFromCIDRSet(er.ToCIDRDenySet)...)
+			}
+		}
+	}
+	return res
+}

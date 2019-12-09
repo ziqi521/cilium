@@ -77,6 +77,18 @@ struct bpf_elf_map __section_maps POLICY_MAP = {
 };
 #endif
 
+#ifdef POLICY_DENY_MAP
+/* Per-endpoint policy deny enforcement map */
+struct bpf_elf_map __section_maps POLICY_DENY_MAP = {
+	.type		= BPF_MAP_TYPE_HASH,
+	.size_key	= sizeof(struct policy_key),
+	.size_value	= sizeof(struct policy_entry),
+	.pinning	= PIN_GLOBAL_NS,
+	.max_elem	= POLICY_MAP_SIZE,
+	.flags		= CONDITIONAL_PREALLOC,
+};
+#endif
+
 #ifndef SKIP_CALLS_MAP
 /* Private per EP map for internal tail calls */
 struct bpf_elf_map __section_maps CALLS_MAP = {

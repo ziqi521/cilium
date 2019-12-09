@@ -92,6 +92,7 @@ func (d *Daemon) TriggerPolicyUpdates(force bool, reason string) {
 // present in both 'added' and 'deleted'.
 func (d *Daemon) UpdateIdentities(added, deleted cache.IdentityCache) {
 	d.policy.GetSelectorCache().UpdateIdentities(added, deleted)
+	d.policy.GetSelectorDenyCache().UpdateIdentities(added, deleted)
 	d.TriggerPolicyUpdates(false, "one or more identities created or deleted")
 }
 
@@ -254,6 +255,7 @@ func (d *Daemon) policyAdd(sourceRules policyAPI.Rules, opts *policy.AddOptions,
 	}
 
 	prefixes := policy.GetCIDRPrefixes(sourceRules)
+	prefixes = append(prefixes, policy.GetCIDRDenyPrefixes(sourceRules)...)
 	logger.WithField("prefixes", prefixes).Debug("Policy imported via API, found CIDR prefixes...")
 
 	newPrefixLengths, err := d.prefixLengths.Add(prefixes)
@@ -707,5 +709,6 @@ func newGetPolicyCacheHandler(d *Daemon) GetPolicySelectorsHandler {
 }
 
 func (h *getPolicySelectors) Handle(params GetPolicySelectorsParams) middleware.Responder {
+	// TODO do the same for policy deny
 	return NewGetPolicySelectorsOK().WithPayload(h.daemon.policy.GetSelectorCache().GetModel())
 }

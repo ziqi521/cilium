@@ -346,6 +346,7 @@ func (h *HeaderfileWriter) writeStaticData(fw io.Writer, e datapath.EndpointConf
 
 	epID := uint16(e.GetID())
 	fmt.Fprintf(fw, "#define POLICY_MAP %s\n", bpf.LocalMapName(policymap.MapName, epID))
+	fmt.Fprintf(fw, "#define POLICY_DENY_MAP %s\n", bpf.LocalMapName(policymap.MapName+"deny_", epID))
 	fmt.Fprintf(fw, "#define CALLS_MAP %s\n", bpf.LocalMapName("cilium_calls_", epID))
 }
 

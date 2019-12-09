@@ -333,6 +333,7 @@ enum {
 #define DROP_INVALID_IDENTITY	-171
 #define DROP_UNKNOWN_SENDER	-172
 #define DROP_NAT_NOT_NEEDED	-173 /* Mapped as drop code, though drop not necessary. */
+#define DROP_POLICY_BLACKLISTED		-174
 
 #define NAT_PUNT_TO_STACK	DROP_NAT_NOT_NEEDED
 

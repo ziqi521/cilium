@@ -182,6 +182,10 @@ type Endpoint struct {
 	// reference to all policy related BPF
 	policyMap *policymap.PolicyMap
 
+	// policyDenyMap is the policy related state of the datapath including
+	// reference to all policy related BPF
+	policyDenyMap *policymap.PolicyMap
+
 	// Options determine the datapath configuration of the endpoint.
 	Options *option.IntOptions
 
@@ -278,6 +282,12 @@ type Endpoint struct {
 
 	realizedPolicy *policy.EndpointPolicy
 
+	selectorDenyPolicy policy.SelectorPolicy
+
+	desiredDenyPolicy *policy.EndpointPolicy
+
+	realizedDenyPolicy *policy.EndpointPolicy
+
 	visibilityPolicy *policy.VisibilityPolicy
 
 	eventQueue *eventqueue.EventQueue
@@ -352,18 +362,6 @@ func (e *Endpoint) HasIpvlanDataPath() bool {
 	return false
 }
 
-// GetIngressPolicyEnabledLocked returns whether ingress policy enforcement is
-// enabled for endpoint or not. The endpoint's mutex must be held.
-func (e *Endpoint) GetIngressPolicyEnabledLocked() bool {
-	return e.desiredPolicy.IngressPolicyEnabled
-}
-
-// GetEgressPolicyEnabledLocked returns whether egress policy enforcement is
-// enabled for endpoint or not. The endpoint's mutex must be held.
-func (e *Endpoint) GetEgressPolicyEnabledLocked() bool {
-	return e.desiredPolicy.EgressPolicyEnabled
-}
-
 // waitForProxyCompletions blocks until all proxy changes have been completed.
 // Called with buildMutex held.
 func (e *Endpoint) waitForProxyCompletions(proxyWaitGroup *completion.WaitGroup) error {
@@ -391,27 +389,29 @@ func (e *Endpoint) waitForProxyCompletions(proxyWaitGroup *completion.WaitGroup)
 // NewEndpointWithState creates a new endpoint useful for testing purposes
 func NewEndpointWithState(owner regeneration.Owner, proxy EndpointProxy, allocator cache.IdentityAllocator, ID uint16, state string) *Endpoint {
 	ep := &Endpoint{
-		owner:           owner,
-		proxy:           proxy,
-		ID:              ID,
-		OpLabels:        pkgLabels.NewOpLabels(),
-		status:          NewEndpointStatus(),
-		DNSHistory:      fqdn.NewDNSCacheWithLimit(option.Config.ToFQDNsMinTTL, option.Config.ToFQDNsMaxIPsPerHost),
-		DNSZombies:      fqdn.NewDNSZombieMappings(),
-		state:           state,
-		hasBPFProgram:   make(chan struct{}, 0),
-		controllers:     controller.NewManager(),
-		eventQueue:      eventqueue.NewEventQueueBuffered(fmt.Sprintf("endpoint-%d", ID), option.Config.EndpointQueueSize),
-		desiredPolicy:   policy.NewEndpointPolicy(owner.GetPolicyRepository()),
-		regenFailedChan: make(chan struct{}, 1),
-		allocator:       allocator,
-		exposed:         make(chan struct{}),
+		owner:             owner,
+		proxy:             proxy,
+		ID:                ID,
+		OpLabels:          pkgLabels.NewOpLabels(),
+		status:            NewEndpointStatus(),
+		DNSHistory:        fqdn.NewDNSCacheWithLimit(option.Config.ToFQDNsMinTTL, option.Config.ToFQDNsMaxIPsPerHost),
+		DNSZombies:        fqdn.NewDNSZombieMappings(),
+		state:             state,
+		hasBPFProgram:     make(chan struct{}, 0),
+		controllers:       controller.NewManager(),
+		eventQueue:        eventqueue.NewEventQueueBuffered(fmt.Sprintf("endpoint-%d", ID), option.Config.EndpointQueueSize),
+		desiredPolicy:     policy.NewEndpointPolicy(owner.GetPolicyRepository()),
+		desiredDenyPolicy: policy.NewEndpointPolicy(owner.GetPolicyRepository()),
+		regenFailedChan:   make(chan struct{}, 1),
+		allocator:         allocator,
+		exposed:           make(chan struct{}),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	ep.aliveCancel = cancel
 	ep.aliveCtx = ctx
 	ep.realizedPolicy = ep.desiredPolicy
+	ep.realizedDenyPolicy = ep.desiredDenyPolicy
 
 	ep.SetDefaultOpts(option.Config.Opts)
 	ep.UpdateLogger(nil)
@@ -721,6 +721,8 @@ func parseEndpoint(ctx context.Context, owner regeneration.Owner, strEp string) 
 	ep.hasBPFProgram = make(chan struct{}, 0)
 	ep.desiredPolicy = policy.NewEndpointPolicy(owner.GetPolicyRepository())
 	ep.realizedPolicy = ep.desiredPolicy
+	ep.desiredDenyPolicy = policy.NewEndpointPolicy(owner.GetPolicyRepository())
+	ep.realizedDenyPolicy = ep.desiredDenyPolicy
 	ep.controllers = controller.NewManager()
 	ep.regenFailedChan = make(chan struct{}, 1)
 	ep.exposed = make(chan struct{})

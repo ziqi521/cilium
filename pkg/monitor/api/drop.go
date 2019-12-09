@@ -76,6 +76,7 @@ var errors = map[uint8]string{
 	170: "Encapsulation traffic is prohibited",
 	171: "Invalid identity",
 	172: "Unknown sender",
+	174: "Policy denied (L3 blacklisted)",
 }
 
 // DropReason prints the drop reason in a human readable string

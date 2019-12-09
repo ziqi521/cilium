@@ -603,7 +603,7 @@ func (sc *SelectorCache) AddFQDNSelector(user CachedSelectionUser, fqdnSelec api
 	sc.mutex.Lock()
 	defer sc.mutex.Unlock()
 
-	// Check whether the selectorCache was updated while 'newFQDNSel' was
+	// Check whether the SelectorCache was updated while 'newFQDNSel' was
 	// being registered without the 'sc.mutex'. If so, use it. Otherwise
 	// we can use the one we just created/configured above.
 	if sel, exists := sc.selectors[key]; exists {

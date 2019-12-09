@@ -81,6 +81,8 @@ type EgressRule struct {
 	// +optional
 	ToCIDR CIDRSlice `json:"toCIDR,omitempty"`
 
+	ToCIDRDeny CIDRSlice `json:"toCIDRDeny,omitempty"`
+
 	// ToCIDRSet is a list of IP blocks which the endpoint subject to the rule
 	// is allowed to initiate connections to in addition to connections
 	// which are allowed via ToEndpoints, along with a list of subnets contained
@@ -96,6 +98,8 @@ type EgressRule struct {
 	//
 	// +optional
 	ToCIDRSet CIDRRuleSlice `json:"toCIDRSet,omitempty"`
+
+	ToCIDRDenySet CIDRRuleSlice `json:"toCIDRDenySet,omitempty"`
 
 	// ToEntities is a list of special entities to which the endpoint subject
 	// to the rule is allowed to initiate connections. Supported entities are

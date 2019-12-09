@@ -354,11 +354,11 @@ func (state *traceState) unSelectRule(ctx *SearchContext, labels labels.LabelArr
 // other rules are stored in the specified slice of LabelSelectorRequirement.
 // These requirements are dynamically inserted into a copy of the receiver rule,
 // as requirements form conjunctions across all rules.
-func (r *rule) resolveIngressPolicy(ctx *SearchContext, state *traceState, result L4PolicyMap, requirements []v1.LabelSelectorRequirement, selectorCache *SelectorCache) (L4PolicyMap, error) {
+func (r *rule) resolveIngressPolicy(ctx *SearchContext, state *traceState, result, resultDeny L4PolicyMap, requirements []v1.LabelSelectorRequirement, selectorCache, selectorDenyCache *SelectorCache) (L4PolicyMap, L4PolicyMap, error) {
 	if !ctx.rulesSelect {
 		if !r.EndpointSelector.Matches(ctx.To) {
 			state.unSelectRule(ctx, ctx.To, r)
-			return nil, nil
+			return nil, nil, nil
 		}
 	}
 
@@ -369,10 +369,26 @@ func (r *rule) resolveIngressPolicy(ctx *SearchContext, state *traceState, resul
 		ctx.PolicyTrace("    No ingress rules\n")
 	}
 	for _, ingressRule := range r.Ingress {
+		lblsCpy := r.Rule.Labels.DeepCopy()
+		var denySelector api.EndpointSelectorSlice
+		denySelector = append(denySelector, ingressRule.FromCIDRDeny.GetAsEndpointSelectors()...)
+		denySelector = append(denySelector, ingressRule.FromCIDRDenySet.GetAsEndpointSelectors()...)
+
+		if len(denySelector) != 0 {
+			cnt, err := mergeIngress(ctx, denySelector, ingressRule.ToPorts, lblsCpy, resultDeny, selectorDenyCache)
+			if err != nil {
+				return nil, nil, err
+			}
+			if cnt > 0 {
+				found += cnt
+			}
+		}
+
 		fromEndpoints := ingressRule.GetSourceEndpointSelectorsWithRequirements(requirements)
-		cnt, err := mergeIngress(ctx, fromEndpoints, ingressRule.ToPorts, r.Rule.Labels.DeepCopy(), result, selectorCache)
+		fromEndpoints = append(fromEndpoints, denySelector...)
+		cnt, err := mergeIngress(ctx, fromEndpoints, ingressRule.ToPorts, lblsCpy, result, selectorCache)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if cnt > 0 {
 			found += cnt
@@ -380,10 +396,10 @@ func (r *rule) resolveIngressPolicy(ctx *SearchContext, state *traceState, resul
 	}
 
 	if found > 0 {
-		return result, nil
+		return result, resultDeny, nil
 	}
 
-	return nil, nil
+	return nil, nil, nil
 }
 
 // ********************** CIDR POLICY **********************
@@ -443,6 +459,62 @@ func (r *rule) resolveCIDRPolicy(ctx *SearchContext, state *traceState, result *
 	for _, egressRule := range r.Egress {
 		var allCIDRs []api.CIDR
 		allCIDRs = append(allCIDRs, egressRule.ToCIDR...)
+		allCIDRs = append(allCIDRs, api.ComputeResultantCIDRSet(egressRule.ToCIDRSet)...)
+
+		// Unlike the Ingress policy which only counts L3 policy in
+		// this function, we count the CIDR+L4 policy in the
+		// desired egress CIDR policy here as well. This ensures
+		// proper computation of IPcache prefix lengths.
+		if cnt := mergeCIDR(ctx, "Egress", allCIDRs, r.Labels, &result.Egress); cnt > 0 {
+			found += cnt
+		}
+	}
+
+	if found > 0 {
+		return result
+	}
+
+	ctx.PolicyTrace("    No L3 rules\n")
+	return nil
+}
+
+// resolveCIDRDenyPolicy...
+func (r *rule) resolveCIDRDenyPolicy(ctx *SearchContext, state *traceState, result *CIDRPolicy) *CIDRPolicy {
+	// Don't select rule if it doesn't apply to the given context.
+	if !ctx.rulesSelect {
+		if !r.EndpointSelector.Matches(ctx.To) {
+			state.unSelectRule(ctx, ctx.To, r)
+			return nil
+		}
+	}
+
+	state.selectRule(ctx, r)
+	found := 0
+
+	for _, ingressRule := range r.Ingress {
+		// TODO (ianvernon): GH-1658
+		var allCIDRs []api.CIDR
+		allCIDRs = append(allCIDRs, ingressRule.FromCIDRDeny...)
+		allCIDRs = append(allCIDRs, api.ComputeResultantCIDRSet(ingressRule.FromCIDRDenySet)...)
+
+		// CIDR + L4 rules are handled via mergeIngress(),
+		// skip them here.
+		if len(allCIDRs) > 0 && len(ingressRule.ToPorts) > 0 {
+			continue
+		}
+
+		if cnt := mergeCIDR(ctx, "Ingress", allCIDRs, r.Labels, &result.Ingress); cnt > 0 {
+			found += cnt
+		}
+	}
+
+	// CIDR egress policy is used for visibility of desired state in
+	// the API and for determining which prefix lengths are available,
+	// however it does not determine the actual CIDRs in the BPF maps
+	// for allowing traffic by CIDR!
+	for _, egressRule := range r.Egress {
+		var allCIDRs []api.CIDR
+		allCIDRs = append(allCIDRs, egressRule.ToCIDRDeny...)
 		allCIDRs = append(allCIDRs, api.ComputeResultantCIDRSet(egressRule.ToCIDRSet)...)
 
 		// Unlike the Ingress policy which only counts L3 policy in
@@ -589,11 +661,11 @@ func mergeEgressPortProto(ctx *SearchContext, endpoints api.EndpointSelectorSlic
 	return 1, nil
 }
 
-func (r *rule) resolveEgressPolicy(ctx *SearchContext, state *traceState, result L4PolicyMap, requirements []v1.LabelSelectorRequirement, selectorCache *SelectorCache) (L4PolicyMap, error) {
+func (r *rule) resolveEgressPolicy(ctx *SearchContext, state *traceState, result, resultDeny L4PolicyMap, requirements []v1.LabelSelectorRequirement, selectorCache, selectorDenyCache *SelectorCache) (L4PolicyMap, L4PolicyMap, error) {
 	if !ctx.rulesSelect {
 		if !r.EndpointSelector.Matches(ctx.From) {
 			state.unSelectRule(ctx, ctx.From, r)
-			return nil, nil
+			return nil, nil, nil
 		}
 	}
 
@@ -604,10 +676,26 @@ func (r *rule) resolveEgressPolicy(ctx *SearchContext, state *traceState, result
 		ctx.PolicyTrace("    No L4 rules\n")
 	}
 	for _, egressRule := range r.Egress {
+		lblsCpy := r.Rule.Labels.DeepCopy()
+		var denySelector api.EndpointSelectorSlice
+		denySelector = append(denySelector, egressRule.ToCIDRDeny.GetAsEndpointSelectors()...)
+		denySelector = append(denySelector, egressRule.ToCIDRDenySet.GetAsEndpointSelectors()...)
+		if len(denySelector) != 0 {
+			fmt.Println("AANM2222")
+			cnt, err := mergeEgress(ctx, denySelector, egressRule.ToPorts, lblsCpy, resultDeny, selectorDenyCache, egressRule.ToFQDNs)
+			if err != nil {
+				return nil, nil, err
+			}
+			if cnt > 0 {
+				found += cnt
+			}
+		}
+
+		// L3-only rule.
 		toEndpoints := egressRule.GetDestinationEndpointSelectorsWithRequirements(requirements)
-		cnt, err := mergeEgress(ctx, toEndpoints, egressRule.ToPorts, r.Rule.Labels.DeepCopy(), result, selectorCache, egressRule.ToFQDNs)
+		cnt, err := mergeEgress(ctx, toEndpoints, egressRule.ToPorts, lblsCpy, result, selectorCache, egressRule.ToFQDNs)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if cnt > 0 {
 			found += cnt
@@ -615,8 +703,8 @@ func (r *rule) resolveEgressPolicy(ctx *SearchContext, state *traceState, result
 	}
 
 	if found > 0 {
-		return result, nil
+		return result, resultDeny, nil
 	}
 
-	return nil, nil
+	return nil, nil, nil
 }

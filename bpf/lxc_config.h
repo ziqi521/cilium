@@ -32,6 +32,7 @@ DEFINE_U32(SECLABEL_NB, 0xfffff);
 #define SECLABEL_NB fetch_u32(SECLABEL_NB)
 
 #define POLICY_MAP test_cilium_policy_65535
+#define POLICY_DENY_MAP test_cilium_policy_deny_65535
 
 #ifndef SKIP_DEBUG
 #define DEBUG

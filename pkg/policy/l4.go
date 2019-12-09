@@ -489,7 +489,7 @@ func (l4 *L4Filter) matchesLabels(labels labels.LabelArray) bool {
 type L4PolicyMap map[string]*L4Filter
 
 // Detach removes the cached selectors held by L4PolicyMap from the
-// selectorCache, allowing the map to be garbage collected when there
+// SelectorCache, allowing the map to be garbage collected when there
 // are no more references to it.
 func (l4 L4PolicyMap) Detach(selectorCache *SelectorCache) {
 	for _, f := range l4 {

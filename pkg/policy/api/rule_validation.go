@@ -179,22 +179,26 @@ func (i *IngressRule) sanitize() error {
 
 func (e *EgressRule) sanitize() error {
 	l3Members := map[string]int{
-		"ToCIDR":      len(e.ToCIDR),
-		"ToCIDRSet":   len(e.ToCIDRSet),
-		"ToEndpoints": len(e.ToEndpoints),
-		"ToEntities":  len(e.ToEntities),
-		"ToServices":  len(e.ToServices),
-		"ToFQDNs":     len(e.ToFQDNs),
-		"ToGroups":    len(e.ToGroups),
+		"ToCIDR":        len(e.ToCIDR),
+		"ToCIDRSet":     len(e.ToCIDRSet),
+		"ToCIDRDeny":    len(e.ToCIDRDeny),
+		"ToCIDRDenySet": len(e.ToCIDRDenySet),
+		"ToEndpoints":   len(e.ToEndpoints),
+		"ToEntities":    len(e.ToEntities),
+		"ToServices":    len(e.ToServices),
+		"ToFQDNs":       len(e.ToFQDNs),
+		"ToGroups":      len(e.ToGroups),
 	}
 	l3DependentL4Support := map[interface{}]bool{
-		"ToCIDR":      true,
-		"ToCIDRSet":   true,
-		"ToEndpoints": true,
-		"ToEntities":  true,
-		"ToServices":  true,
-		"ToFQDNs":     true,
-		"ToGroups":    true,
+		"ToCIDR":        true,
+		"ToCIDRSet":     true,
+		"ToCIDRDeny":    true,
+		"ToCIDRDenySet": true,
+		"ToEndpoints":   true,
+		"ToEntities":    true,
+		"ToServices":    true,
+		"ToFQDNs":       true,
+		"ToGroups":      true,
 	}
 	l7Members := countL7Rules(e.ToPorts)
 	l7EgressSupport := map[string]bool{
@@ -253,6 +257,20 @@ func (e *EgressRule) sanitize() error {
 	}
 	for i := range e.ToCIDRSet {
 		prefixLength, err := e.ToCIDRSet[i].sanitize()
+		if err != nil {
+			return err
+		}
+		prefixLengths[prefixLength] = exists{}
+	}
+	for i := range e.ToCIDRDeny {
+		prefixLength, err := e.ToCIDRDeny[i].sanitize()
+		if err != nil {
+			return err
+		}
+		prefixLengths[prefixLength] = exists{}
+	}
+	for i := range e.ToCIDRDenySet {
+		prefixLength, err := e.ToCIDRDenySet[i].sanitize()
 		if err != nil {
 			return err
 		}

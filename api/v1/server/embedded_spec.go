@@ -2022,6 +2022,9 @@ func init() {
         "l4": {
           "$ref": "#/definitions/L4Policy"
         },
+        "l4-deny": {
+          "$ref": "#/definitions/L4Policy"
+        },
         "policy-enabled": {
           "description": "Whether policy enforcement is enabled (ingress, egress, both or none)",
           "$ref": "#/definitions/EndpointPolicyEnabled"
@@ -5286,6 +5289,9 @@ func init() {
           "type": "integer"
         },
         "l4": {
+          "$ref": "#/definitions/L4Policy"
+        },
+        "l4-deny": {
           "$ref": "#/definitions/L4Policy"
         },
         "policy-enabled": {

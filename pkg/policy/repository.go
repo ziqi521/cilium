@@ -55,10 +55,12 @@ type Repository struct {
 
 	// SelectorCache tracks the selectors used in the policies
 	// resolved from the repository.
-	selectorCache *SelectorCache
+	selectorCache     *SelectorCache
+	selectorDenyCache *SelectorCache
 
 	// PolicyCache tracks the selector policies created from this repo
-	policyCache *PolicyCache
+	policyCache     *PolicyCache
+	policyDenyCache *PolicyCache
 }
 
 // GetSelectorCache() returns the selector cache used by the Repository
@@ -66,9 +68,19 @@ func (p *Repository) GetSelectorCache() *SelectorCache {
 	return p.selectorCache
 }
 
+// GetSelectorCache() returns the selector cache used by the Repository
+func (p *Repository) GetSelectorDenyCache() *SelectorCache {
+	return p.selectorDenyCache
+}
+
 // GetPolicyCache() returns the policy cache used by the Repository
 func (p *Repository) GetPolicyCache() *PolicyCache {
 	return p.policyCache
+}
+
+// GetPolicyCache() returns the policy cache used by the Repository
+func (p *Repository) GetPolicyDenyCache() *PolicyCache {
+	return p.policyDenyCache
 }
 
 // NewPolicyRepository creates a new policy repository.
@@ -78,14 +90,17 @@ func NewPolicyRepository(idCache cache.IdentityCache) *Repository {
 	repoChangeQueue.Run()
 	ruleReactionQueue.Run()
 	selectorCache := NewSelectorCache(idCache)
+	selectorDenyCache := NewSelectorCache(idCache)
 
 	repo := &Repository{
 		revision:              1,
 		RepositoryChangeQueue: repoChangeQueue,
 		RuleReactionQueue:     ruleReactionQueue,
 		selectorCache:         selectorCache,
+		selectorDenyCache:     selectorDenyCache,
 	}
-	repo.policyCache = NewPolicyCache(repo, true)
+	repo.policyCache = NewPolicyCache(repo, selectorCache, true)
+	repo.policyDenyCache = NewPolicyCache(repo, selectorDenyCache, true)
 	return repo
 }
 
@@ -185,14 +200,14 @@ func wildcardL3L4Rule(proto api.L4Proto, port int, endpoints api.EndpointSelecto
 // Caller must release resources by calling Detach() on the returned map!
 //
 // Note: Only used for policy tracing
-func (p *Repository) ResolveL4IngressPolicy(ctx *SearchContext) (L4PolicyMap, error) {
+func (p *Repository) ResolveL4IngressPolicy(ctx *SearchContext) (L4PolicyMap, L4PolicyMap, error) {
 
-	result, err := p.rules.resolveL4IngressPolicy(ctx, p.GetRevision(), p.GetSelectorCache())
+	result, resultDeny, err := p.rules.resolveL4IngressPolicy(ctx, p.GetRevision(), p.GetSelectorCache(), p.GetSelectorDenyCache())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return result, nil
+	return result, resultDeny, nil
 }
 
 // ResolveL4EgressPolicy resolves the L4 egress policy for a set of endpoints
@@ -205,14 +220,14 @@ func (p *Repository) ResolveL4IngressPolicy(ctx *SearchContext) (L4PolicyMap, er
 // Caller must release resources by calling Detach() on the returned map!
 //
 // NOTE: This is only called from unit tests, but from multiple packages.
-func (p *Repository) ResolveL4EgressPolicy(ctx *SearchContext) (L4PolicyMap, error) {
-	result, err := p.rules.resolveL4EgressPolicy(ctx, p.GetRevision(), p.GetSelectorCache())
+func (p *Repository) ResolveL4EgressPolicy(ctx *SearchContext) (L4PolicyMap, L4PolicyMap, error) {
+	result, resultDeny, err := p.rules.resolveL4EgressPolicy(ctx, p.GetRevision(), p.GetSelectorCache(), p.GetSelectorDenyCache())
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return result, nil
+	return result, resultDeny, nil
 }
 
 // AllowsIngressRLocked evaluates the policy repository for the provided search
@@ -231,18 +246,32 @@ func (p *Repository) AllowsIngressRLocked(ctx *SearchContext) api.Decision {
 	}
 
 	ctx.PolicyTrace("Tracing %s", ctx.String())
-	ingressPolicy, err := p.ResolveL4IngressPolicy(ctx)
+	ingressPolicy, ingressDenyPolicy, err := p.ResolveL4IngressPolicy(ctx)
 	if err != nil {
 		log.WithError(err).Warn("Evaluation error while resolving L4 ingress policy")
 	}
 
 	verdict := api.Denied
-	if err == nil && len(ingressPolicy) > 0 {
-		verdict = ingressPolicy.IngressCoversContext(ctx)
+	if err == nil {
+		if len(ingressDenyPolicy) > 0 {
+			denyVerdict := ingressDenyPolicy.IngressCoversContext(ctx)
+			// If denyVerdict is "Allowed" then it means it should block
+			// this traffic entirely.
+			if denyVerdict == api.Allowed {
+				verdict = api.Denied
+			} else {
+				if len(ingressPolicy) > 0 {
+					verdict = ingressPolicy.IngressCoversContext(ctx)
+				}
+			}
+		} else if len(ingressPolicy) > 0 {
+			verdict = ingressPolicy.IngressCoversContext(ctx)
+		}
 	}
 
 	ctx.PolicyTrace("Ingress verdict: %s", verdict.String())
 	ingressPolicy.Detach(p.GetSelectorCache())
+	ingressDenyPolicy.Detach(p.GetSelectorDenyCache())
 
 	return verdict
 }
@@ -265,17 +294,31 @@ func (p *Repository) AllowsEgressRLocked(ctx *SearchContext) api.Decision {
 	}
 
 	ctx.PolicyTrace("Tracing %s\n", ctx.String())
-	egressPolicy, err := p.ResolveL4EgressPolicy(ctx)
+	egressPolicy, egressDenyPolicy, err := p.ResolveL4EgressPolicy(ctx)
 	if err != nil {
 		log.WithError(err).Warn("Evaluation error while resolving L4 egress policy")
 	}
 	verdict := api.Denied
-	if err == nil && len(egressPolicy) > 0 {
-		verdict = egressPolicy.EgressCoversContext(ctx)
+	if err == nil {
+		if len(egressDenyPolicy) > 0 {
+			denyVerdict := egressDenyPolicy.EgressCoversContext(ctx)
+			// If denyVerdict is "Allowed" then it means it should block
+			// this traffic entirely.
+			if denyVerdict != api.Allowed {
+				verdict = api.Denied
+			} else {
+				if len(egressPolicy) > 0 {
+					verdict = egressPolicy.EgressCoversContext(ctx)
+				}
+			}
+		} else if len(egressPolicy) > 0 {
+			verdict = egressPolicy.EgressCoversContext(ctx)
+		}
 	}
 
 	ctx.PolicyTrace("Egress verdict: %s", verdict.String())
 	egressPolicy.Detach(p.GetSelectorCache())
+	egressDenyPolicy.Detach(p.GetSelectorDenyCache())
 	return verdict
 }
 
@@ -499,23 +542,111 @@ func (p *Repository) GetRulesMatching(labels labels.LabelArray) (ingressMatch bo
 // a slice of all rules which match.
 //
 // Must be called with p.Mutex held
-func (p *Repository) getMatchingRules(securityIdentity *identity.Identity) (ingressMatch bool, egressMatch bool, matchingRules ruleSlice) {
-	matchingRules = []*rule{}
+func (p *Repository) getMatchingRules(
+	securityIdentity *identity.Identity,
+) (
+	ingressMatch, egressMatch bool, matchingRules ruleSlice,
+	ingressDenyMatch, egressDenyMatch bool, matchingDenyRules ruleSlice) {
+
+	matchingRules, matchingDenyRules = []*rule{}, []*rule{}
 	ingressMatch = false
+	ingressDenyMatch = false
 	egressMatch = false
+	egressDenyMatch = false
+
 	for _, r := range p.rules {
 		if ruleMatches := r.matches(securityIdentity); ruleMatches {
-			// Don't need to update whether ingressMatch is true if it already
-			// has been determined to be true - allows us to not have to check
-			// lenth of slice.
-			if !ingressMatch && len(r.Ingress) > 0 {
-				ingressMatch = true
+			matchRules, matchDenyRules := false, false
+			for _, ing := range r.Ingress {
+				if !matchRules &&
+					len(ing.FromEndpoints) != 0 ||
+					len(ing.FromRequires) != 0 ||
+					len(ing.ToPorts) != 0 ||
+					len(ing.FromCIDR) != 0 ||
+					len(ing.FromCIDRSet) != 0 ||
+					len(ing.FromEntities) != 0 {
+
+					matchingRules = append(matchingRules, r)
+					matchRules = true
+					ingressMatch = true
+				}
+				if !matchDenyRules &&
+					len(ing.FromCIDRDeny) != 0 ||
+					len(ing.FromCIDRDenySet) != 0 {
+
+					matchingDenyRules = append(matchingDenyRules, r)
+					matchDenyRules = true
+					ingressDenyMatch = true
+				}
+				if matchRules && matchDenyRules {
+					break
+				}
 			}
-			if !egressMatch && len(r.Egress) > 0 {
-				egressMatch = true
+			for _, eg := range r.Egress {
+				if !matchRules &&
+					len(eg.ToEndpoints) != 0 ||
+					len(eg.ToRequires) != 0 ||
+					len(eg.ToPorts) != 0 ||
+					len(eg.ToCIDR) != 0 ||
+					len(eg.ToCIDRSet) != 0 ||
+					len(eg.ToEntities) != 0 ||
+					len(eg.ToServices) != 0 ||
+					len(eg.ToFQDNs) != 0 ||
+					len(eg.ToGroups) != 0 {
+
+					matchingRules = append(matchingRules, r)
+					matchRules = true
+					egressMatch = true
+				}
+				if !matchDenyRules &&
+					len(eg.ToCIDRDeny) != 0 ||
+					len(eg.ToCIDRDenySet) != 0 {
+
+					matchingDenyRules = append(matchingDenyRules, r)
+					matchDenyRules = true
+					egressDenyMatch = true
+				}
+				if matchRules && matchDenyRules {
+					break
+				}
 			}
-			matchingRules = append(matchingRules, r)
+			// if !egressMatch && len(r.Egress) > 0 {
+			// 	egressMatch = true
+			// }
+			// matchingRules = append(matchingRules, r)
 		}
+		// if ingressMatch {
+		// 	for _, rule := range p.rules {
+		// 		ingRuleIsDenyOnly := true
+		// 		for _, ing := range rule.Ingress {
+		// 			if len(ing.FromCIDRDeny) == 0 ||
+		// 				len(ing.FromCIDRDenySet) == 0 {
+		// 				ingRuleIsDenyOnly = false
+		// 				break
+		// 			}
+		// 		}
+		// 		if ingRuleIsDenyOnly {
+		// 			ingressMatch = false
+		// 			break
+		// 		}
+		// 	}
+		// }
+		// if egressMatch {
+		// 	for _, rule := range p.rules {
+		// 		egRuleIsDenyOnly := true
+		// 		for _, eg := range rule.Egress {
+		// 			if len(eg.ToCIDRDeny) == 0 ||
+		// 				len(eg.ToCIDRDenySet) == 0 {
+		// 				egRuleIsDenyOnly = false
+		// 				break
+		// 			}
+		// 		}
+		// 		if egRuleIsDenyOnly {
+		// 			egressMatch = false
+		// 			break
+		// 		}
+		// 	}
+		// }
 	}
 	return
 }
@@ -590,13 +721,14 @@ func (p *Repository) GetRulesList() *models.Policy {
 // cannot be generated due to conflicts at L4 or L7, returns an error.
 //
 // Must be performed while holding the Repository lock.
-func (p *Repository) resolvePolicyLocked(securityIdentity *identity.Identity) (*selectorPolicy, error) {
+func (p *Repository) resolvePolicyLocked(securityIdentity *identity.Identity) (*selectorPolicy, *selectorPolicy, error) {
 	// First obtain whether policy applies in both traffic directions, as well
 	// as list of rules which actually select this endpoint. This allows us
 	// to not have to iterate through the entire rule list multiple times and
 	// perform the matching decision again when computing policy for each
 	// protocol layer, which is quite costly in terms of performance.
-	ingressEnabled, egressEnabled, matchingRules := p.computePolicyEnforcementAndRules(securityIdentity)
+	ingressEnabled, egressEnabled, matchingRules,
+		ingressDenyEnabled, egressDenyEnabled, matchingDenyRules := p.computePolicyEnforcementAndRules(securityIdentity)
 
 	calculatedPolicy := &selectorPolicy{
 		Revision:             p.GetRevision(),
@@ -606,8 +738,14 @@ func (p *Repository) resolvePolicyLocked(securityIdentity *identity.Identity) (*
 		IngressPolicyEnabled: ingressEnabled,
 		EgressPolicyEnabled:  egressEnabled,
 	}
-	calculatedPolicy.IngressPolicyEnabled = ingressEnabled
-	calculatedPolicy.EgressPolicyEnabled = egressEnabled
+	calculatedDenyPolicy := &selectorPolicy{
+		Revision:             p.GetRevision(),
+		SelectorCache:        p.GetSelectorDenyCache(),
+		L4Policy:             NewL4Policy(p.GetRevision()),
+		CIDRPolicy:           NewCIDRPolicy(),
+		IngressPolicyEnabled: ingressDenyEnabled,
+		EgressPolicyEnabled:  egressDenyEnabled,
+	}
 
 	labels := securityIdentity.LabelArray
 	ingressCtx := SearchContext{
@@ -626,14 +764,14 @@ func (p *Repository) resolvePolicyLocked(securityIdentity *identity.Identity) (*
 	}
 
 	if ingressEnabled {
-		newL4IngressPolicy, err := matchingRules.resolveL4IngressPolicy(&ingressCtx, p.GetRevision(), p.GetSelectorCache())
+		newL4IngressPolicy, _, err := matchingRules.resolveL4IngressPolicy(&ingressCtx, p.GetRevision(), p.GetSelectorCache(), p.GetSelectorDenyCache())
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		newCIDRIngressPolicy := matchingRules.resolveCIDRPolicy(&ingressCtx)
 		if err := newCIDRIngressPolicy.Validate(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		calculatedPolicy.CIDRPolicy.Ingress = newCIDRIngressPolicy.Ingress
@@ -641,14 +779,14 @@ func (p *Repository) resolvePolicyLocked(securityIdentity *identity.Identity) (*
 	}
 
 	if egressEnabled {
-		newL4EgressPolicy, err := matchingRules.resolveL4EgressPolicy(&egressCtx, p.GetRevision(), p.GetSelectorCache())
+		newL4EgressPolicy, _, err := matchingRules.resolveL4EgressPolicy(&egressCtx, p.GetRevision(), p.GetSelectorCache(), p.GetSelectorDenyCache())
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		newCIDREgressPolicy := matchingRules.resolveCIDRPolicy(&egressCtx)
 		if err := newCIDREgressPolicy.Validate(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		calculatedPolicy.CIDRPolicy.Egress = newCIDREgressPolicy.Egress
@@ -658,7 +796,40 @@ func (p *Repository) resolvePolicyLocked(securityIdentity *identity.Identity) (*
 	// Make the calculated policy ready for incremental updates
 	calculatedPolicy.Attach()
 
-	return calculatedPolicy, nil
+	if ingressDenyEnabled {
+		_, newL4IngressDenyPolicy, err := matchingDenyRules.resolveL4IngressPolicy(&ingressCtx, p.GetRevision(), p.GetSelectorCache(), p.GetSelectorDenyCache())
+		if err != nil {
+			return nil, nil, err
+		}
+
+		newCIDRIngressDenyPolicy := matchingDenyRules.resolveCIDRPolicy(&ingressCtx)
+		if err := newCIDRIngressDenyPolicy.Validate(); err != nil {
+			return nil, nil, err
+		}
+
+		calculatedDenyPolicy.CIDRPolicy.Ingress = newCIDRIngressDenyPolicy.Ingress
+		calculatedDenyPolicy.L4Policy.Ingress = newL4IngressDenyPolicy
+	}
+
+	if egressDenyEnabled {
+		_, newL4EgressDenyPolicy, err := matchingDenyRules.resolveL4EgressPolicy(&egressCtx, p.GetRevision(), p.GetSelectorCache(), p.GetSelectorDenyCache())
+		if err != nil {
+			return nil, nil, err
+		}
+
+		newCIDREgressPolicy := matchingDenyRules.resolveCIDRPolicy(&egressCtx)
+		if err := newCIDREgressPolicy.Validate(); err != nil {
+			return nil, nil, err
+		}
+
+		calculatedDenyPolicy.CIDRPolicy.Egress = newCIDREgressPolicy.Egress
+		calculatedDenyPolicy.L4Policy.Egress = newL4EgressDenyPolicy
+	}
+
+	// Make the calculated policy ready for incremental updates
+	calculatedDenyPolicy.Attach()
+
+	return calculatedPolicy, calculatedDenyPolicy, nil
 }
 
 // computePolicyEnforcementAndRules returns whether policy applies at ingress or ingress
@@ -666,31 +837,37 @@ func (p *Repository) resolvePolicyLocked(securityIdentity *identity.Identity) (*
 // the set of labels of the given security identity.
 //
 // Must be called with repo mutex held for reading.
-func (p *Repository) computePolicyEnforcementAndRules(securityIdentity *identity.Identity) (ingress bool, egress bool, matchingRules ruleSlice) {
+func (p *Repository) computePolicyEnforcementAndRules(
+	securityIdentity *identity.Identity,
+) (
+	ingress, egress bool, matchingRules ruleSlice,
+	ingressDeny, egressDeny bool, matchingDenyRules ruleSlice) {
 
 	lbls := securityIdentity.LabelArray
 	// Check if policy enforcement should be enabled at the daemon level.
 	switch GetPolicyEnabled() {
 	case option.AlwaysEnforce:
-		_, _, matchingRules = p.getMatchingRules(securityIdentity)
+		_, _, matchingRules, _, _, matchingDenyRules = p.getMatchingRules(securityIdentity)
 		// If policy enforcement is enabled for the daemon, then it has to be
 		// enabled for the endpoint.
-		return true, true, matchingRules
+		return true, true, matchingRules, false, false, matchingDenyRules
 	case option.DefaultEnforcement:
-		ingress, egress, matchingRules = p.getMatchingRules(securityIdentity)
+		ingress, egress, matchingRules,
+			ingressDeny, egressDeny, matchingDenyRules = p.getMatchingRules(securityIdentity)
 		// If the endpoint has the reserved:init label, i.e. if it has not yet
 		// received any labels, always enforce policy (default deny).
 		if lbls.Has(labels.IDNameInit) {
-			return true, true, matchingRules
+			return true, true, matchingRules, false, false, matchingDenyRules
 		}
 
 		// Default mode means that if rules contain labels that match this
 		// endpoint, then enable policy enforcement for this endpoint.
-		return ingress, egress, matchingRules
+		return ingress, egress, matchingRules,
+			ingressDeny, egressDeny, matchingDenyRules
 	default:
 		// If policy enforcement isn't enabled, we do not enable policy
 		// enforcement for the endpoint. We don't care about returning any
 		// rules that match.
-		return false, false, nil
+		return false, false, nil, false, false, nil
 	}
 }

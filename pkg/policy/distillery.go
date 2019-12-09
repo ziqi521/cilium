@@ -30,7 +30,7 @@ import (
 type SelectorPolicy interface {
 	// Consume returns the policy in terms of connectivity to peer
 	// Identities. The callee MUST NOT modify the returned pointer.
-	Consume(owner PolicyOwner) *EndpointPolicy
+	Consume(owner PolicyOwner) (*EndpointPolicy, *EndpointPolicy)
 }
 
 // PolicyCache represents a cache of resolved policies for identities.
@@ -46,7 +46,7 @@ type PolicyCache struct {
 }
 
 // NewPolicyCache creates a new cache of SelectorPolicy.
-func NewPolicyCache(repo *Repository, subscribe bool) *PolicyCache {
+func NewPolicyCache(repo *Repository, selectorCache *SelectorCache, subscribe bool) *PolicyCache {
 	cache := &PolicyCache{
 		repo:     repo,
 		policies: make(map[identityPkg.NumericIdentity]*cachedSelectorPolicy),
@@ -64,7 +64,7 @@ func (cache *PolicyCache) GetSelectorCache() *SelectorCache {
 // lookupOrCreate adds the specified Identity to the policy cache, with a reference
 // from the specified Endpoint, then returns the threadsafe copy of the policy
 // and whether policy has been computed for this identity.
-func (cache *PolicyCache) lookupOrCreate(identity *identityPkg.Identity, create bool) (SelectorPolicy, bool) {
+func (cache *PolicyCache) lookupOrCreate(identity *identityPkg.Identity, create bool) SelectorPolicy {
 	cache.Lock()
 	defer cache.Unlock()
 	cip, ok := cache.policies[identity.ID]
@@ -73,15 +73,15 @@ func (cache *PolicyCache) lookupOrCreate(identity *identityPkg.Identity, create 
 		cache.policies[identity.ID] = cip
 	}
 	if cip != nil {
-		return cip, cip.getPolicy().Revision > 0
+		return cip
 	}
-	return nil, false
+	return nil
 }
 
 // insert adds the specified Identity to the policy cache, with a reference
 // from the specified Endpoint, then returns the threadsafe copy of the policy
 // and whether policy has been computed for this identity.
-func (cache *PolicyCache) insert(identity *identityPkg.Identity) (SelectorPolicy, bool) {
+func (cache *PolicyCache) insert(identity *identityPkg.Identity) SelectorPolicy {
 	return cache.lookupOrCreate(identity, true)
 }
 
@@ -94,7 +94,9 @@ func (cache *PolicyCache) delete(identity *identityPkg.Identity) bool {
 	cip, ok := cache.policies[identity.ID]
 	if ok {
 		delete(cache.policies, identity.ID)
-		cip.getPolicy().Detach()
+		p, pd := cip.getPolicy()
+		p.Detach()
+		pd.Detach()
 	}
 	return ok
 }
@@ -126,18 +128,19 @@ func (cache *PolicyCache) updateSelectorPolicy(identity *identityPkg.Identity) (
 	cip.Lock()
 	defer cip.Unlock()
 
+	sp, _ := cip.getPolicy()
 	// Don't resolve policy if it was already done for this or later revision.
-	if cip.getPolicy().Revision >= cache.repo.GetRevision() {
+	if sp.Revision >= cache.repo.GetRevision() {
 		return false, nil
 	}
 
 	// Resolve the policies, which could fail
-	selPolicy, err := cache.repo.resolvePolicyLocked(identity)
+	selPolicy, selPolicyDeny, err := cache.repo.resolvePolicyLocked(identity)
 	if err != nil {
 		return false, err
 	}
 
-	cip.setPolicy(selPolicy)
+	cip.setPolicy(selPolicy, selPolicyDeny)
 
 	return true, nil
 }
@@ -157,8 +160,7 @@ func (cache *PolicyCache) LocalEndpointIdentityRemoved(identity *identityPkg.Ide
 // Lookup attempts to locate the SelectorPolicy corresponding to the specified
 // identity. If policy is not cached for the identity, it returns nil.
 func (cache *PolicyCache) Lookup(identity *identityPkg.Identity) SelectorPolicy {
-	cip, _ := cache.lookupOrCreate(identity, false)
-	return cip
+	return cache.lookupOrCreate(identity, false)
 }
 
 // UpdatePolicy resolves the policy for the security identity of the specified
@@ -169,6 +171,11 @@ func (cache *PolicyCache) Lookup(identity *identityPkg.Identity) SelectorPolicy 
 func (cache *PolicyCache) UpdatePolicy(identity *identityPkg.Identity) error {
 	_, err := cache.updateSelectorPolicy(identity)
 	return err
+}
+
+type policy struct {
+	policy     *selectorPolicy
+	policyDeny *selectorPolicy
 }
 
 // cachedSelectorPolicy is a wrapper around a selectorPolicy (stored in the
@@ -185,24 +192,31 @@ func newCachedSelectorPolicy(identity *identityPkg.Identity, selectorCache *Sele
 	cip := &cachedSelectorPolicy{
 		identity: identity,
 	}
-	cip.setPolicy(newSelectorPolicy(0, selectorCache))
+	cip.setPolicy(newSelectorPolicy(0, selectorCache), newSelectorPolicy(0, selectorCache))
 	return cip
 }
 
 // getPolicy returns a reference to the selectorPolicy that is cached.
 //
 // Users should treat the result as immutable state that MUST NOT be modified.
-func (cip *cachedSelectorPolicy) getPolicy() *selectorPolicy {
-	return (*selectorPolicy)(atomic.LoadPointer(&cip.policy))
+func (cip *cachedSelectorPolicy) getPolicy() (*selectorPolicy, *selectorPolicy) {
+	p := (*policy)(atomic.LoadPointer(&cip.policy))
+	return p.policy, p.policyDeny
 }
 
 // setPolicy updates the reference to the SelectorPolicy that is cached.
 // Calls Detach() on the old policy, if any.
-func (cip *cachedSelectorPolicy) setPolicy(policy *selectorPolicy) {
-	oldPolicy := (*selectorPolicy)(atomic.SwapPointer(&cip.policy, unsafe.Pointer(policy)))
+func (cip *cachedSelectorPolicy) setPolicy(sp *selectorPolicy, spDeny *selectorPolicy) {
+	p := &policy{
+		policy:     sp,
+		policyDeny: spDeny,
+	}
+
+	oldPolicy := (*policy)(atomic.SwapPointer(&cip.policy, unsafe.Pointer(p)))
 	if oldPolicy != nil {
 		// Release the references the previous policy holds on the selector cache.
-		oldPolicy.Detach()
+		oldPolicy.policy.Detach()
+		oldPolicy.policyDeny.Detach()
 	}
 }
 
@@ -211,9 +225,11 @@ func (cip *cachedSelectorPolicy) setPolicy(policy *selectorPolicy) {
 //
 // This denotes that a particular endpoint is 'consuming' the policy from the
 // selector policy cache.
-func (cip *cachedSelectorPolicy) Consume(owner PolicyOwner) *EndpointPolicy {
+func (cip *cachedSelectorPolicy) Consume(owner PolicyOwner) (*EndpointPolicy, *EndpointPolicy) {
 	// TODO: This currently computes the EndpointPolicy from SelectorPolicy
 	// on-demand, however in future the cip is intended to cache the
 	// EndpointPolicy for this Identity and emit datapath deltas instead.
-	return cip.getPolicy().DistillPolicy(owner)
+	sp, spDeny := cip.getPolicy()
+	return sp.DistillPolicy(owner, false),
+		spDeny.DistillPolicy(owner, true)
 }

@@ -39,8 +39,6 @@ type EndpointInfoSource interface {
 	// implementation.
 	ConntrackName() string
 	ConntrackNameLocked() string
-	GetIngressPolicyEnabledLocked() bool
-	GetEgressPolicyEnabledLocked() bool
 	ProxyID(l4 *policy.L4Filter) string
 	GetProxyInfoByFields() (uint64, string, string, []string, string, uint64, error)
 }

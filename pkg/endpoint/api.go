@@ -67,29 +67,30 @@ func NewEndpointFromChangeModel(ctx context.Context, owner regeneration.Owner, p
 	}
 
 	ep := &Endpoint{
-		owner:            owner,
-		proxy:            proxy,
-		ID:               uint16(base.ID),
-		containerName:    base.ContainerName,
-		containerID:      base.ContainerID,
-		dockerNetworkID:  base.DockerNetworkID,
-		dockerEndpointID: base.DockerEndpointID,
-		ifName:           base.InterfaceName,
-		K8sPodName:       base.K8sPodName,
-		K8sNamespace:     base.K8sNamespace,
-		datapathMapID:    int(base.DatapathMapID),
-		ifIndex:          int(base.InterfaceIndex),
-		OpLabels:         labels.NewOpLabels(),
-		DNSHistory:       fqdn.NewDNSCacheWithLimit(option.Config.ToFQDNsMinTTL, option.Config.ToFQDNsMaxIPsPerHost),
-		DNSZombies:       fqdn.NewDNSZombieMappings(),
-		state:            "",
-		status:           NewEndpointStatus(),
-		hasBPFProgram:    make(chan struct{}, 0),
-		desiredPolicy:    policy.NewEndpointPolicy(owner.GetPolicyRepository()),
-		controllers:      controller.NewManager(),
-		regenFailedChan:  make(chan struct{}, 1),
-		allocator:        allocator,
-		exposed:          make(chan struct{}),
+		owner:             owner,
+		proxy:             proxy,
+		ID:                uint16(base.ID),
+		containerName:     base.ContainerName,
+		containerID:       base.ContainerID,
+		dockerNetworkID:   base.DockerNetworkID,
+		dockerEndpointID:  base.DockerEndpointID,
+		ifName:            base.InterfaceName,
+		K8sPodName:        base.K8sPodName,
+		K8sNamespace:      base.K8sNamespace,
+		datapathMapID:     int(base.DatapathMapID),
+		ifIndex:           int(base.InterfaceIndex),
+		OpLabels:          labels.NewOpLabels(),
+		DNSHistory:        fqdn.NewDNSCacheWithLimit(option.Config.ToFQDNsMinTTL, option.Config.ToFQDNsMaxIPsPerHost),
+		DNSZombies:        fqdn.NewDNSZombieMappings(),
+		state:             "",
+		status:            NewEndpointStatus(),
+		hasBPFProgram:     make(chan struct{}, 0),
+		desiredPolicy:     policy.NewEndpointPolicy(owner.GetPolicyRepository()),
+		desiredDenyPolicy: policy.NewEndpointPolicy(owner.GetPolicyRepository()),
+		controllers:       controller.NewManager(),
+		regenFailedChan:   make(chan struct{}, 1),
+		allocator:         allocator,
+		exposed:           make(chan struct{}),
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -97,6 +98,7 @@ func NewEndpointFromChangeModel(ctx context.Context, owner regeneration.Owner, p
 	ep.aliveCtx = ctx
 
 	ep.realizedPolicy = ep.desiredPolicy
+	ep.realizedDenyPolicy = ep.desiredDenyPolicy
 
 	if base.Mac != "" {
 		m, err := mac.ParseMAC(base.Mac)
@@ -325,6 +327,7 @@ func (e *Endpoint) GetPolicyModel() *models.EndpointPolicyStatus {
 		return nil
 	}
 
+	// TODO: do similar behavior for deny policy
 	realizedIngressIdentities := make([]int64, 0)
 	realizedEgressIdentities := make([]int64, 0)
 
@@ -380,11 +383,13 @@ func (e *Endpoint) GetPolicyModel() *models.EndpointPolicyStatus {
 	sortProxyStats(proxyStats)
 
 	var (
-		realizedCIDRPolicy *policy.CIDRPolicy
-		realizedL4Policy   *policy.L4Policy
+		realizedCIDRPolicy   *policy.CIDRPolicy
+		realizedL4Policy     *policy.L4Policy
+		realizedL4DenyPolicy *policy.L4Policy
 	)
 	if e.realizedPolicy != nil {
 		realizedL4Policy = e.realizedPolicy.L4Policy
+		realizedL4DenyPolicy = e.realizedDenyPolicy.L4Policy
 		realizedCIDRPolicy = e.realizedPolicy.CIDRPolicy
 	}
 
@@ -397,16 +402,19 @@ func (e *Endpoint) GetPolicyModel() *models.EndpointPolicyStatus {
 		AllowedEgressIdentities:  realizedEgressIdentities,
 		CidrPolicy:               realizedCIDRPolicy.GetModel(),
 		L4:                       realizedL4Policy.GetModel(),
+		L4Deny:                   realizedL4DenyPolicy.GetModel(),
 		PolicyEnabled:            policyEnabled,
 	}
 
 	var (
-		desiredCIDRPolicy *policy.CIDRPolicy
-		desiredL4Policy   *policy.L4Policy
+		desiredCIDRPolicy   *policy.CIDRPolicy
+		desiredL4Policy     *policy.L4Policy
+		desiredL4DenyPolicy *policy.L4Policy
 	)
 	if e.desiredPolicy != nil {
 		desiredCIDRPolicy = e.desiredPolicy.CIDRPolicy
 		desiredL4Policy = e.desiredPolicy.L4Policy
+		desiredL4DenyPolicy = e.desiredDenyPolicy.L4Policy
 	}
 
 	desiredMdl := &models.EndpointPolicy{
@@ -418,6 +426,7 @@ func (e *Endpoint) GetPolicyModel() *models.EndpointPolicyStatus {
 		AllowedEgressIdentities:  desiredEgressIdentities,
 		CidrPolicy:               desiredCIDRPolicy.GetModel(),
 		L4:                       desiredL4Policy.GetModel(),
+		L4Deny:                   desiredL4DenyPolicy.GetModel(),
 		PolicyEnabled:            policyEnabled,
 	}
 	// FIXME GH-3280 Once we start returning revisions Realized should be the

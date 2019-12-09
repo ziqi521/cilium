@@ -108,16 +108,18 @@ func (p *selectorPolicy) Detach() {
 // SelectorCache. These can subsequently be plumbed into the datapath.
 //
 // Must be performed while holding the Repository lock.
-func (p *selectorPolicy) DistillPolicy(policyOwner PolicyOwner) *EndpointPolicy {
+func (p *selectorPolicy) DistillPolicy(policyOwner PolicyOwner, deny bool) *EndpointPolicy {
 	calculatedPolicy := &EndpointPolicy{
 		selectorPolicy: p,
 		PolicyMapState: make(MapState),
 		PolicyOwner:    policyOwner,
 	}
 
-	if !p.IngressPolicyEnabled || !p.EgressPolicyEnabled {
-		calculatedPolicy.PolicyMapState.AllowAllIdentities(
-			!p.IngressPolicyEnabled, !p.EgressPolicyEnabled)
+	if !deny {
+		if !p.IngressPolicyEnabled || !p.EgressPolicyEnabled {
+			calculatedPolicy.PolicyMapState.AllowAllIdentities(
+				!p.IngressPolicyEnabled, !p.EgressPolicyEnabled)
+		}
 	}
 
 	// Register the new EndpointPolicy as a receiver of delta
@@ -136,7 +138,9 @@ func (p *selectorPolicy) DistillPolicy(policyOwner PolicyOwner) *EndpointPolicy 
 	// PolicyMapCanges will contain all changes that are applied
 	// after the computation of PolicyMapState has started.
 	calculatedPolicy.computeDesiredL4PolicyMapEntries()
-	calculatedPolicy.PolicyMapState.DetermineAllowLocalhostIngress(p.L4Policy)
+	if !deny {
+		calculatedPolicy.PolicyMapState.DetermineAllowLocalhostIngress(p.L4Policy)
+	}
 
 	return calculatedPolicy
 }

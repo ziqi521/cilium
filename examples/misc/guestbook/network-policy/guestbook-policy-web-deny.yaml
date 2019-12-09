@@ -1,0 +1,11 @@
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: "guestbook-web-deny"
+spec:
+  endpointSelector:
+    matchLabels:
+      k8s-app.guestbook: web
+  egress:
+  - toCIDRDeny:
+    - 1.1.1.1/32

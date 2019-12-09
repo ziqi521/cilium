@@ -39,6 +39,7 @@ var (
 	CallsMapName   = "cilium_calls_"
 	elfMapPrefixes = []string{
 		policymap.MapName,
+		policymap.MapName + "deny_",
 		CallsMapName,
 	}
 	elfCtMapPrefixes = []string{

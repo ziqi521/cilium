@@ -126,6 +126,15 @@ func parseToCiliumIngressRule(namespace string, inRule, retRule *api.Rule) {
 				retRule.Ingress[i].FromCIDRSet = make([]api.CIDRRule, len(ing.FromCIDRSet))
 				copy(retRule.Ingress[i].FromCIDRSet, ing.FromCIDRSet)
 			}
+			if ing.FromCIDRDeny != nil {
+				retRule.Ingress[i].FromCIDRDeny = make([]api.CIDR, len(ing.FromCIDRDeny))
+				copy(retRule.Ingress[i].FromCIDRDeny, ing.FromCIDRDeny)
+			}
+
+			if ing.FromCIDRDenySet != nil {
+				retRule.Ingress[i].FromCIDRDenySet = make([]api.CIDRRule, len(ing.FromCIDRDenySet))
+				copy(retRule.Ingress[i].FromCIDRDenySet, ing.FromCIDRDenySet)
+			}
 
 			if ing.FromRequires != nil {
 				retRule.Ingress[i].FromRequires = make([]api.EndpointSelector, len(ing.FromRequires))
@@ -170,6 +179,16 @@ func parseToCiliumEgressRule(namespace string, inRule, retRule *api.Rule) {
 			if egr.ToCIDRSet != nil {
 				retRule.Egress[i].ToCIDRSet = make(api.CIDRRuleSlice, len(egr.ToCIDRSet))
 				copy(retRule.Egress[i].ToCIDRSet, egr.ToCIDRSet)
+			}
+
+			if egr.ToCIDRDeny != nil {
+				retRule.Egress[i].ToCIDRDeny = make([]api.CIDR, len(egr.ToCIDRDeny))
+				copy(retRule.Egress[i].ToCIDRDeny, egr.ToCIDRDeny)
+			}
+
+			if egr.ToCIDRDenySet != nil {
+				retRule.Egress[i].ToCIDRDenySet = make(api.CIDRRuleSlice, len(egr.ToCIDRDenySet))
+				copy(retRule.Egress[i].ToCIDRDenySet, egr.ToCIDRDenySet)
 			}
 
 			if egr.ToRequires != nil {

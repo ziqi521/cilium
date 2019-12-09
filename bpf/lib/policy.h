@@ -262,10 +262,15 @@ policy_can_access_ingress(struct __sk_buff *skb, __u32 src_identity,
 {
 	int ret;
 
+	ret = __policy_can_access(&POLICY_DENY_MAP, skb, src_identity, dport,
+				      proto, CT_INGRESS, is_fragment);
+        if (ret == 0) {
+		cilium_dbg(skb, DBG_POLICY_DENIED, src_identity, SECLABEL);
+		return DROP_POLICY_BLACKLISTED;
+	}
+
 	ret = __policy_can_access(&POLICY_MAP, skb, src_identity, dport,
 				      proto, CT_INGRESS, is_fragment);
-	if (ret >= TC_ACT_OK)
-		return ret;
 
 	cilium_dbg(skb, DBG_POLICY_DENIED, src_identity, SECLABEL);
 
@@ -295,7 +300,15 @@ policy_can_egress(struct __sk_buff *skb, __u32 identity, __u16 dport, __u8 proto
 		return DROP_ENCAP_PROHIBITED;
 #endif
 
-	int ret = __policy_can_access(&POLICY_MAP, skb, identity, dport, proto,
+	int ret;
+	ret = __policy_can_access(&POLICY_DENY_MAP, skb, identity, dport, proto,
+				      CT_EGRESS, false);
+        if (ret == 0) {
+		cilium_dbg(skb, DBG_POLICY_DENIED, SECLABEL, identity);
+		return DROP_POLICY_BLACKLISTED;
+	}
+
+	ret = __policy_can_access(&POLICY_MAP, skb, identity, dport, proto,
 				      CT_EGRESS, false);
 	if (ret >= 0)
 		return ret;

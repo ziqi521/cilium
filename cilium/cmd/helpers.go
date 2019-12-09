@@ -253,7 +253,8 @@ func endpointToPolicyMapPath(endpointID string) (string, error) {
 	var mapName string
 	id, err := strconv.Atoi(endpointID)
 	if err == nil {
-		mapName = bpf.LocalMapName(policymap.MapName, uint16(id))
+		mapName = bpf.LocalMapName(policymap.MapName+"deny_", uint16(id))
+		fmt.Println("Policy map:", mapName)
 	} else if numericIdentity := identity.GetReservedID(endpointID); numericIdentity != identity.IdentityUnknown {
 		mapSuffix := "reserved_" + strconv.FormatUint(uint64(numericIdentity), 10)
 		mapName = fmt.Sprintf("%s%s", policymap.MapName, mapSuffix)
@@ -273,7 +274,7 @@ func parsePolicyUpdateArgsHelper(args []string) (*PolicyUpdateArgs, error) {
 
 	mapName, err := endpointToPolicyMapPath(args[0])
 	if err != nil {
-		return nil, fmt.Errorf("Failed to parse endpointID %q", args[0])
+		return nil, fmt.Errorf("Failed to parse endpointID %q: %s", args[0], err)
 	}
 
 	peerLbl, err := strconv.ParseUint(args[2], 10, 32)

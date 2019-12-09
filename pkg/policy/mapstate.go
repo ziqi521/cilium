@@ -81,7 +81,7 @@ func (keys MapState) DetermineAllowLocalhostIngress(l4Policy *L4Policy) {
 	}
 }
 
-// AllowAllIdentities translates all identities in selectorCache to their
+// AllowAllIdentities translates all identities in SelectorCache to their
 // corresponding Keys in the specified direction (ingress, egress) which allows
 // all at L3.
 func (keys MapState) AllowAllIdentities(ingress, egress bool) {

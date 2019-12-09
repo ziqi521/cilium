@@ -87,6 +87,8 @@ type IngressRule struct {
 	// +optional
 	FromCIDR CIDRSlice `json:"fromCIDR,omitempty"`
 
+	FromCIDRDeny CIDRSlice `json:"fromCIDRDeny,omitempty"`
+
 	// FromCIDRSet is a list of IP blocks which the endpoint subject to the
 	// rule is allowed to receive connections from in addition to FromEndpoints,
 	// along with a list of subnets contained within their corresponding IP block
@@ -101,6 +103,8 @@ type IngressRule struct {
 	//
 	// +optional
 	FromCIDRSet CIDRRuleSlice `json:"fromCIDRSet,omitempty"`
+
+	FromCIDRDenySet CIDRRuleSlice `json:"fromCIDRDenySet,omitempty"`
 
 	// FromEntities is a list of special entities which the endpoint subject
 	// to the rule is allowed to receive connections from. Supported entities are

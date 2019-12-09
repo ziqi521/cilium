@@ -176,11 +176,12 @@ func (e *Endpoint) regeneratePolicy() (retErr error) {
 		e.getLogger().WithError(err).Warning("Failed to update policy")
 		return err
 	}
-	calculatedPolicy := e.selectorPolicy.Consume(e)
+	calculatedPolicy, calculatedDenyPolicy := e.selectorPolicy.Consume(e)
 	stats.policyCalculation.End(true)
 
 	// This marks the e.desiredPolicy different from the previously realized policy
 	e.desiredPolicy = calculatedPolicy
+	e.desiredDenyPolicy = calculatedDenyPolicy
 
 	if e.forcePolicyCompute {
 		forceRegeneration = true     // Options were changed by the caller.
@@ -385,6 +386,8 @@ func (e *Endpoint) updateRealizedState(stats *regenerationStatistics, origDir st
 
 	// Set realized state to desired state.
 	e.realizedPolicy = e.desiredPolicy
+	// Set realized state to desired state.
+	e.realizedDenyPolicy = e.desiredDenyPolicy
 
 	// Mark the endpoint to be running the policy revision it was
 	// compiled for
@@ -699,6 +702,8 @@ func (e *Endpoint) SetIdentity(identity *identityPkg.Identity, newEndpoint bool)
 
 	// Clear selectorPolicy. It will be determined at next regeneration.
 	e.selectorPolicy = nil
+	// Clear selectorPolicy. It will be determined at next regeneration.
+	e.selectorDenyPolicy = nil
 
 	// Sets endpoint state to ready if was waiting for identity
 	if e.getState() == StateWaitingForIdentity {

@@ -27,7 +27,7 @@ import (
 // to be written with []*rule as a receiver.
 type ruleSlice []*rule
 
-func (rules ruleSlice) wildcardL3L4Rules(ingress bool, l4Policy L4PolicyMap, requirements []v1.LabelSelectorRequirement, selectorCache *SelectorCache) {
+func (rules ruleSlice) wildcardL3L4Rules(ingress bool, l4Policy, l4DenyPolicy L4PolicyMap, requirements []v1.LabelSelectorRequirement, selectorCache, selectorDenyCache *SelectorCache) {
 	// Duplicate L3-only rules into wildcard L7 rules.
 	for _, r := range rules {
 		if ingress {
@@ -39,8 +39,12 @@ func (rules ruleSlice) wildcardL3L4Rules(ingress bool, l4Policy L4PolicyMap, req
 
 				fromEndpoints := rule.GetSourceEndpointSelectorsWithRequirements(requirements)
 				ruleLabels := r.Rule.Labels.DeepCopy()
+				var denyCIDR api.EndpointSelectorSlice
+				denyCIDR = append(denyCIDR, rule.FromCIDRDeny.GetAsEndpointSelectors()...)
+				denyCIDR = append(denyCIDR, rule.FromCIDRDenySet.GetAsEndpointSelectors()...)
 
 				// L3-only rule.
+				fromEndpoints = append(fromEndpoints, denyCIDR...)
 				if len(rule.ToPorts) == 0 && len(fromEndpoints) > 0 {
 					wildcardL3L4Rule(api.ProtoTCP, 0, fromEndpoints, ruleLabels, l4Policy, selectorCache)
 					wildcardL3L4Rule(api.ProtoUDP, 0, fromEndpoints, ruleLabels, l4Policy, selectorCache)
@@ -63,6 +67,30 @@ func (rules ruleSlice) wildcardL3L4Rules(ingress bool, l4Policy L4PolicyMap, req
 						}
 					}
 				}
+
+				// Deny rules
+				if len(rule.ToPorts) == 0 && len(denyCIDR) > 0 {
+					wildcardL3L4Rule(api.ProtoTCP, 0, denyCIDR, ruleLabels, l4DenyPolicy, selectorDenyCache)
+					wildcardL3L4Rule(api.ProtoUDP, 0, denyCIDR, ruleLabels, l4DenyPolicy, selectorDenyCache)
+				} else {
+					// L4-only or L3-dependent L4 rule.
+					//
+					// "fromEndpoints" may be empty here, which indicates that all L3 peers should
+					// be selected. If so, add the wildcard selector.
+					if len(denyCIDR) == 0 {
+						denyCIDR = append(denyCIDR, api.WildcardEndpointSelector)
+					}
+					for _, toPort := range rule.ToPorts {
+						// L3/L4-only rule
+						if toPort.Rules.IsEmpty() {
+							for _, p := range toPort.Ports {
+								// Already validated via PortRule.Validate().
+								port, _ := strconv.ParseUint(p.Port, 0, 16)
+								wildcardL3L4Rule(p.Protocol, int(port), denyCIDR, ruleLabels, l4DenyPolicy, selectorDenyCache)
+							}
+						}
+					}
+				}
 			}
 		} else {
 			for _, rule := range r.Egress {
@@ -73,8 +101,12 @@ func (rules ruleSlice) wildcardL3L4Rules(ingress bool, l4Policy L4PolicyMap, req
 
 				toEndpoints := rule.GetDestinationEndpointSelectorsWithRequirements(requirements)
 				ruleLabels := r.Rule.Labels.DeepCopy()
+				var denyCIDR api.EndpointSelectorSlice
+				denyCIDR = append(denyCIDR, rule.ToCIDRDeny.GetAsEndpointSelectors()...)
+				denyCIDR = append(denyCIDR, rule.ToCIDRDenySet.GetAsEndpointSelectors()...)
 
 				// L3-only rule.
+				// toEndpoints = append(toEndpoints, denyCIDR...)
 				if len(rule.ToPorts) == 0 && len(toEndpoints) > 0 {
 					wildcardL3L4Rule(api.ProtoTCP, 0, toEndpoints, ruleLabels, l4Policy, selectorCache)
 					wildcardL3L4Rule(api.ProtoUDP, 0, toEndpoints, ruleLabels, l4Policy, selectorCache)
@@ -97,13 +129,37 @@ func (rules ruleSlice) wildcardL3L4Rules(ingress bool, l4Policy L4PolicyMap, req
 						}
 					}
 				}
+
+				// L3-only rule.
+				if len(rule.ToPorts) == 0 && len(denyCIDR) > 0 {
+					wildcardL3L4Rule(api.ProtoTCP, 0, denyCIDR, ruleLabels, l4DenyPolicy, selectorDenyCache)
+					wildcardL3L4Rule(api.ProtoUDP, 0, denyCIDR, ruleLabels, l4DenyPolicy, selectorDenyCache)
+				} else {
+					// L4-only or L3-dependent L4 rule.
+					//
+					// "toEndpoints" may be empty here, which indicates that all L3 peers should
+					// be selected. If so, add the wildcard selector.
+					if len(denyCIDR) == 0 {
+						denyCIDR = append(denyCIDR, api.WildcardEndpointSelector)
+					}
+					for _, toPort := range rule.ToPorts {
+						// L3/L4-only rule
+						if toPort.Rules.IsEmpty() {
+							for _, p := range toPort.Ports {
+								// Already validated via PortRule.Validate().
+								port, _ := strconv.ParseUint(p.Port, 0, 16)
+								wildcardL3L4Rule(p.Protocol, int(port), denyCIDR, ruleLabels, l4DenyPolicy, selectorDenyCache)
+							}
+						}
+					}
+				}
 			}
 		}
 	}
 }
 
-func (rules ruleSlice) resolveL4IngressPolicy(ctx *SearchContext, revision uint64, selectorCache *SelectorCache) (L4PolicyMap, error) {
-	result := L4PolicyMap{}
+func (rules ruleSlice) resolveL4IngressPolicy(ctx *SearchContext, revision uint64, selectorCache, selectorDenyCache *SelectorCache) (L4PolicyMap, L4PolicyMap, error) {
+	result, resultDeny := L4PolicyMap{}, L4PolicyMap{}
 
 	ctx.PolicyTrace("\n")
 	ctx.PolicyTrace("Resolving ingress policy for %+v\n", ctx.To)
@@ -132,28 +188,28 @@ func (rules ruleSlice) resolveL4IngressPolicy(ctx *SearchContext, revision uint6
 	ctx.rulesSelect = true
 
 	for _, r := range matchedRules {
-		found, err := r.resolveIngressPolicy(ctx, &state, result, requirements, selectorCache)
+		found, foundDeny, err := r.resolveIngressPolicy(ctx, &state, result, resultDeny, requirements, selectorCache, selectorDenyCache)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		state.ruleID++
-		if found != nil {
+		if found != nil || foundDeny != nil {
 			state.matchedRules++
 		}
 	}
 
-	matchedRules.wildcardL3L4Rules(true, result, requirements, selectorCache)
+	matchedRules.wildcardL3L4Rules(true, result, resultDeny, requirements, selectorCache, selectorDenyCache)
 
 	state.trace(len(rules), ctx)
 
 	// Restore ctx in case caller uses it again.
 	ctx.rulesSelect = oldRulesSelect
 
-	return result, nil
+	return result, resultDeny, nil
 }
 
-func (rules ruleSlice) resolveL4EgressPolicy(ctx *SearchContext, revision uint64, selectorCache *SelectorCache) (L4PolicyMap, error) {
-	result := L4PolicyMap{}
+func (rules ruleSlice) resolveL4EgressPolicy(ctx *SearchContext, revision uint64, selectorCache, selectorDenyCache *SelectorCache) (L4PolicyMap, L4PolicyMap, error) {
+	result, resultDeny := L4PolicyMap{}, L4PolicyMap{}
 
 	ctx.PolicyTrace("\n")
 	ctx.PolicyTrace("Resolving egress policy for %+v\n", ctx.From)
@@ -183,24 +239,24 @@ func (rules ruleSlice) resolveL4EgressPolicy(ctx *SearchContext, revision uint64
 
 	for i, r := range matchedRules {
 		state.ruleID = i
-		found, err := r.resolveEgressPolicy(ctx, &state, result, requirements, selectorCache)
+		found, foundDeny, err := r.resolveEgressPolicy(ctx, &state, result, resultDeny, requirements, selectorCache, selectorDenyCache)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		state.ruleID++
-		if found != nil {
+		if found != nil || foundDeny != nil {
 			state.matchedRules++
 		}
 	}
 
-	matchedRules.wildcardL3L4Rules(false, result, requirements, selectorCache)
+	matchedRules.wildcardL3L4Rules(false, result, resultDeny, requirements, selectorCache, selectorDenyCache)
 
 	state.trace(len(rules), ctx)
 
 	// Restore ctx in case caller uses it again.
 	ctx.rulesSelect = oldRulesSelect
 
-	return result, nil
+	return result, resultDeny, nil
 }
 
 func (rules ruleSlice) resolveCIDRPolicy(ctx *SearchContext) *CIDRPolicy {
@@ -211,6 +267,21 @@ func (rules ruleSlice) resolveCIDRPolicy(ctx *SearchContext) *CIDRPolicy {
 	state := traceState{}
 	for _, r := range rules {
 		r.resolveCIDRPolicy(ctx, &state, result)
+		state.ruleID++
+	}
+
+	state.trace(len(rules), ctx)
+	return result
+}
+
+func (rules ruleSlice) resolveCIDRDenyPolicy(ctx *SearchContext) *CIDRPolicy {
+	result := NewCIDRPolicy()
+
+	ctx.PolicyTrace("Resolving L3 (CIDRDeny) policy for %+v\n", ctx.To)
+
+	state := traceState{}
+	for _, r := range rules {
+		r.resolveCIDRDenyPolicy(ctx, &state, result)
 		state.ruleID++
 	}
 
