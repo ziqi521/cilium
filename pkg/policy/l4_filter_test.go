@@ -208,7 +208,7 @@ func (ds *PolicyTestSuite) TestMergeAllowAllL3AndAllowAllL7(c *C) {
 // Case 2: allow all at L3 in both rules. Allow all in one L7 rule, but second
 // rule restricts at L7. Because one L7 rule allows at L7, all traffic is allowed
 // at L7, but still redirected at the proxy.
-// Should resolve to one rule.
+// Should resolve to two HTTP rules, or possibly to one wildcarding HTTP rule.
 func (ds *PolicyTestSuite) TestMergeAllowAllL3AndShadowedL7(c *C) {
 	rule1 := &rule{
 		Rule: api.Rule{
@@ -249,11 +249,6 @@ func (ds *PolicyTestSuite) TestMergeAllowAllL3AndShadowedL7(c *C) {
 
 	c.Log(buffer)
 
-	// The expected policy contains the L7 Rules below, but in practice
-	// when the policy is being resolved and sent to the proxy, it actually
-	// allows all at L7, based on the first API rule imported above. We
-	// just set the expected set of L7 rules below to include this to match
-	// the current implementation.
 	expected := L4PolicyMap{"80/TCP": &L4Filter{
 		Port:     80,
 		Protocol: api.ProtoTCP,
@@ -715,13 +710,14 @@ func (ds *PolicyTestSuite) TestMergeTLSPolicies(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(res, Not(IsNil))
 
+	// Since cachedSelectorA's map entry is 'nil', it will not be redirected to the proxy.
 	expected := L4PolicyMap{"443/TCP": &L4Filter{
 		Port:     443,
 		Protocol: api.ProtoTCP,
 		U8Proto:  6,
 		L7Parser: ParserTypeHTTP,
 		L7RulesPerSelector: L7DataMap{
-			cachedSelectorA: nil,
+			cachedSelectorA: nil, // no proxy redirect
 			cachedSelectorC: &PerSelectorPolicy{
 				TerminatingTLS: &TLSContext{
 					CertificateChain: "fake public cert",
@@ -1495,7 +1491,7 @@ func (ds *PolicyTestSuite) TestAllowingLocalhostShadowsL7(c *C) {
 					HTTP: []api.PortRuleHTTP{{Path: "/", Method: "GET"}},
 				},
 			},
-			cachedSelectorHost: nil,
+			cachedSelectorHost: nil, // no proxy redirect
 		},
 		Ingress:          true,
 		DerivedFromRules: labels.LabelArrayList{nil},
