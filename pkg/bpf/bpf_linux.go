@@ -21,6 +21,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"unsafe"
 
@@ -68,6 +69,7 @@ func CreateMap(mapType int, keySize, valueSize, maxEntries, flags, innerID uint3
 		uintptr(unsafe.Pointer(&uba)),
 		unsafe.Sizeof(uba),
 	)
+	runtime.KeepAlive(uba)
 	if option.Config.MetricsConfig.BPFSyscallDurationEnabled {
 		metrics.BPFSyscallDuration.WithLabelValues(metricOpCreate, metrics.Errno2Outcome(err)).Observe(duration.End(err == 0).Total().Seconds())
 	}
@@ -134,7 +136,9 @@ func UpdateElement(fd int, key, value unsafe.Pointer, flags uint64) error {
 		flags: uint64(flags),
 	}
 
-	return UpdateElementFromPointers(fd, uintptr(unsafe.Pointer(&uba)), unsafe.Sizeof(uba))
+	ret := UpdateElementFromPointers(fd, uintptr(unsafe.Pointer(&uba)), unsafe.Sizeof(uba))
+	runtime.KeepAlive(uba)
+	return ret
 }
 
 // LookupElement looks up for the map value stored in fd with the given key. The value
@@ -189,6 +193,7 @@ func deleteElement(fd int, key unsafe.Pointer) (uintptr, syscall.Errno) {
 		uintptr(unsafe.Pointer(&uba)),
 		unsafe.Sizeof(uba),
 	)
+	runtime.KeepAlive(uba)
 	if option.Config.MetricsConfig.BPFSyscallDurationEnabled {
 		metrics.BPFSyscallDuration.WithLabelValues(metricOpDelete, metrics.Errno2Outcome(err)).Observe(duration.End(err == 0).Total().Seconds())
 	}
@@ -240,7 +245,11 @@ func GetNextKey(fd int, key, nextKey unsafe.Pointer) error {
 		value: uint64(uintptr(nextKey)),
 	}
 
-	return GetNextKeyFromPointers(fd, uintptr(unsafe.Pointer(&uba)), unsafe.Sizeof(uba))
+	ret := GetNextKeyFromPointers(fd, uintptr(unsafe.Pointer(&uba)), unsafe.Sizeof(uba))
+	runtime.KeepAlive(uba)
+	runtime.KeepAlive(key)
+	runtime.KeepAlive(nextKey)
+	return ret
 }
 
 // GetFirstKey fetches the first key in the map.
@@ -251,7 +260,10 @@ func GetFirstKey(fd int, nextKey unsafe.Pointer) error {
 		value: uint64(uintptr(nextKey)),
 	}
 
-	return GetNextKeyFromPointers(fd, uintptr(unsafe.Pointer(&uba)), unsafe.Sizeof(uba))
+	ret := GetNextKeyFromPointers(fd, uintptr(unsafe.Pointer(&uba)), unsafe.Sizeof(uba))
+	runtime.KeepAlive(uba)
+	runtime.KeepAlive(nextKey)
+	return ret
 }
 
 // This struct must be in sync with union bpf_attr's anonymous struct used by
@@ -280,6 +292,9 @@ func ObjPin(fd int, pathname string) error {
 		uintptr(unsafe.Pointer(&uba)),
 		unsafe.Sizeof(uba),
 	)
+	runtime.KeepAlive(pathStr)
+	runtime.KeepAlive(uba)
+
 	if option.Config.MetricsConfig.BPFSyscallDurationEnabled {
 		metrics.BPFSyscallDuration.WithLabelValues(metricOpObjPin, metrics.Errno2Outcome(err)).Observe(duration.End(err == 0).Total().Seconds())
 	}
@@ -308,6 +323,8 @@ func ObjGet(pathname string) (int, error) {
 		uintptr(unsafe.Pointer(&uba)),
 		unsafe.Sizeof(uba),
 	)
+	runtime.KeepAlive(pathStr)
+	runtime.KeepAlive(uba)
 	if option.Config.MetricsConfig.BPFSyscallDurationEnabled {
 		metrics.BPFSyscallDuration.WithLabelValues(metricOpObjGet, metrics.Errno2Outcome(err)).Observe(duration.End(err == 0).Total().Seconds())
 	}
@@ -345,6 +362,7 @@ func MapFdFromID(id int) (int, error) {
 		uintptr(unsafe.Pointer(&uba)),
 		unsafe.Sizeof(uba),
 	)
+	runtime.KeepAlive(uba)
 	if option.Config.MetricsConfig.BPFSyscallDurationEnabled {
 		metrics.BPFSyscallDuration.WithLabelValues(metricOpGetFDByID, metrics.Errno2Outcome(err)).Observe(duration.End(err == 0).Total().Seconds())
 	}
@@ -566,6 +584,9 @@ func TestDummyProg(progType ProgType, attachType uint32) error {
 	fd, _, errno := unix.Syscall(unix.SYS_BPF, BPF_PROG_LOAD,
 		uintptr(unsafe.Pointer(&bpfAttr)),
 		unsafe.Sizeof(bpfAttr))
+	runtime.KeepAlive(insns)
+	runtime.KeepAlive(license)
+	runtime.KeepAlive(bpfAttr)
 	err = unix.Setrlimit(unix.RLIMIT_MEMLOCK, &oldLim)
 	if errno == 0 {
 		unix.Close(int(fd))
