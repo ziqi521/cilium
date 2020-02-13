@@ -600,11 +600,11 @@ func (m *Map) DumpWithCallback(cb DumpCallback) error {
 			break
 		}
 	}
-	runtime.KeepAlive(key)
-	runtime.KeepAlive(nextKey)
-	runtime.KeepAlive(bpfCurrentKey)
-	runtime.KeepAlive(value)
-	runtime.KeepAlive(bpfNextKey)
+	runtime.KeepAlive(&key)
+	runtime.KeepAlive(&nextKey)
+	runtime.KeepAlive(&bpfCurrentKey)
+	runtime.KeepAlive(&value)
+	runtime.KeepAlive(&bpfNextKey)
 
 	return nil
 }
@@ -725,11 +725,11 @@ func (m *Map) DumpReliablyWithCallback(cb DumpCallback, stats *DumpStats) error 
 		copy(currentKey, nextKey)
 	}
 
-	runtime.KeepAlive(currentKey)
-	runtime.KeepAlive(value)
-	runtime.KeepAlive(bpfCurrentKey)
-	runtime.KeepAlive(nextKey)
-	runtime.KeepAlive(bpfNextKey)
+	runtime.KeepAlive(&currentKey)
+	runtime.KeepAlive(&value)
+	runtime.KeepAlive(&bpfCurrentKey)
+	runtime.KeepAlive(&nextKey)
+	runtime.KeepAlive(&bpfNextKey)
 
 	return nil
 }
@@ -928,6 +928,8 @@ func (m *Map) DeleteAll() error {
 			return err
 		}
 	}
+
+	runtime.KeepAlive(&nextKey)
 
 	return nil
 }

@@ -79,7 +79,7 @@ func GetProgNextID(current uint32) (uint32, error) {
 		duration = spanstat.Start()
 	}
 	ret, _, err := unix.Syscall(unix.SYS_BPF, BPF_PROG_GET_NEXT_ID, uintptr(unsafe.Pointer(&attr)), unsafe.Sizeof(attr))
-	runtime.KeepAlive(attr)
+	runtime.KeepAlive(&attr)
 	if option.Config.MetricsConfig.BPFSyscallDurationEnabled {
 		metrics.BPFSyscallDuration.WithLabelValues(metricOpProgGetNextID, metrics.Errno2Outcome(err)).Observe(duration.End(err == 0).Total().Seconds())
 	}
@@ -97,7 +97,7 @@ func GetProgFDByID(id uint32) (int, error) {
 	}
 
 	fd, _, err := unix.Syscall(unix.SYS_BPF, BPF_PROG_GET_FD_BY_ID, uintptr(unsafe.Pointer(&attr)), unsafe.Sizeof(attr))
-	runtime.KeepAlive(attr)
+	runtime.KeepAlive(&attr)
 	if fd < 0 || err != 0 {
 		return int(fd), fmt.Errorf("Unable to get fd for program id %d: %v", id, err)
 	}
@@ -125,9 +125,9 @@ func GetProgInfoByFD(fd int) (ProgInfo, error) {
 		duration = spanstat.Start()
 	}
 	ret, _, err := unix.Syscall(unix.SYS_BPF, BPF_OBJ_GET_INFO_BY_FD, uintptr(unsafe.Pointer(&attr)), unsafe.Sizeof(attr))
-	runtime.KeepAlive(info)
-	runtime.KeepAlive(attrInfo)
-	runtime.KeepAlive(attr)
+	runtime.KeepAlive(&info)
+	runtime.KeepAlive(&attrInfo)
+	runtime.KeepAlive(&attr)
 	if option.Config.MetricsConfig.BPFSyscallDurationEnabled {
 		metrics.BPFSyscallDuration.WithLabelValues(metricOpObjGetInfoByFD, metrics.Errno2Outcome(err)).Observe(duration.End(err == 0).Total().Seconds())
 	}

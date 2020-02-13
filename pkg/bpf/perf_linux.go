@@ -336,7 +336,7 @@ func PerfEventOpen(config *PerfEventConfig, pid int, cpu int, groupFD int, flags
 		uintptr(cpu),
 		uintptr(groupFD),
 		uintptr(flags), 0)
-	runtime.KeepAlive(attr)
+	runtime.KeepAlive(&attr)
 	if option.Config.MetricsConfig.BPFSyscallDurationEnabled {
 		metrics.BPFSyscallDuration.WithLabelValues(metricOpPerfEventOpen, metrics.Errno2Outcome(err)).Observe(duration.EndError(err).Total().Seconds())
 	}
@@ -669,8 +669,8 @@ func (e *PerCpuEvents) Unmute() error {
 		uba.key = uint64(uintptr(unsafe.Pointer(&event.cpu)))
 		uba.value = uint64(uintptr(unsafe.Pointer(&event.Fd)))
 		err := e.eventMap.Update(e.eventMap.fd, ubaPtr, ubaSizeOf)
-		runtime.KeepAlive(event)
-		runtime.KeepAlive(uba)
+		runtime.KeepAlive(&event)
+		runtime.KeepAlive(&uba)
 		if err != nil {
 			return err
 		}
