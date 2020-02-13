@@ -17,6 +17,7 @@ package nat
 import (
 	"bytes"
 	"fmt"
+	"runtime"
 	"unsafe"
 
 	"github.com/cilium/cilium/pkg/bpf"
@@ -191,7 +192,10 @@ func deleteMapping4(m *Map, ctKey *tuple.TupleKey4Global) error {
 		rkey.Flags = tuple.TUPLE_F_IN
 
 		m.Delete(&key)
+		runtime.KeepAlive(key)
 		m.Delete(&rkey)
+		runtime.KeepAlive(rkey)
+		runtime.KeepAlive(valMap)
 	}
 	return nil
 }
@@ -215,7 +219,10 @@ func deleteMapping6(m *Map, ctKey *tuple.TupleKey6Global) error {
 		rkey.Flags = tuple.TUPLE_F_IN
 
 		m.Delete(&key)
+		runtime.KeepAlive(key)
 		m.Delete(&rkey)
+		runtime.KeepAlive(rkey)
+		runtime.KeepAlive(valMap)
 	}
 	return nil
 }
