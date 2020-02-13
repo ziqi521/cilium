@@ -670,6 +670,7 @@ func (e *PerCpuEvents) Unmute() error {
 		uba.value = uint64(uintptr(unsafe.Pointer(&event.Fd)))
 		err := e.eventMap.Update(e.eventMap.fd, ubaPtr, ubaSizeOf)
 		runtime.KeepAlive(event)
+		runtime.KeepAlive(uba)
 		if err != nil {
 			return err
 		}

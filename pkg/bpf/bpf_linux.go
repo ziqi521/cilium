@@ -181,6 +181,7 @@ func LookupElement(fd int, key, value unsafe.Pointer) error {
 	ret := LookupElementFromPointers(fd, unsafe.Pointer(&uba), unsafe.Sizeof(uba))
 	runtime.KeepAlive(key)
 	runtime.KeepAlive(value)
+	runtime.KeepAlive(uba)
 	return ret
 }
 
