@@ -100,7 +100,7 @@ type bpfAttrMapOpElem struct {
 // bpf.BPF_ANY to create new element or update existing;
 // bpf.BPF_NOEXIST to create new element if it didn't exist;
 // bpf.BPF_EXIST to update existing element.
-func UpdateElementFromPointers(fd int, structPtr, sizeOfStruct uintptr) error {
+func UpdateElementFromPointers(fd int, structPtr unsafe.Pointer, sizeOfStruct uintptr) error {
 	var duration *spanstat.SpanStat
 	if option.Config.MetricsConfig.BPFSyscallDurationEnabled {
 		duration = spanstat.Start()
@@ -108,9 +108,10 @@ func UpdateElementFromPointers(fd int, structPtr, sizeOfStruct uintptr) error {
 	ret, _, err := unix.Syscall(
 		unix.SYS_BPF,
 		BPF_MAP_UPDATE_ELEM,
-		structPtr,
+		uintptr(structPtr),
 		sizeOfStruct,
 	)
+	runtime.KeepAlive(structPtr)
 	if option.Config.MetricsConfig.BPFSyscallDurationEnabled {
 		metrics.BPFSyscallDuration.WithLabelValues(metricOpUpdate, metrics.Errno2Outcome(err)).Observe(duration.End(err == 0).Total().Seconds())
 	}
@@ -136,14 +137,16 @@ func UpdateElement(fd int, key, value unsafe.Pointer, flags uint64) error {
 		flags: uint64(flags),
 	}
 
-	ret := UpdateElementFromPointers(fd, uintptr(unsafe.Pointer(&uba)), unsafe.Sizeof(uba))
+	ret := UpdateElementFromPointers(fd, unsafe.Pointer(&uba), unsafe.Sizeof(uba))
+	runtime.KeepAlive(key)
+	runtime.KeepAlive(value)
 	runtime.KeepAlive(uba)
 	return ret
 }
 
 // LookupElement looks up for the map value stored in fd with the given key. The value
 // is stored in the value unsafe.Pointer.
-func LookupElementFromPointers(fd int, structPtr, sizeOfStruct uintptr) error {
+func LookupElementFromPointers(fd int, structPtr unsafe.Pointer, sizeOfStruct uintptr) error {
 	var duration *spanstat.SpanStat
 	if option.Config.MetricsConfig.BPFSyscallDurationEnabled {
 		duration = spanstat.Start()
@@ -151,7 +154,7 @@ func LookupElementFromPointers(fd int, structPtr, sizeOfStruct uintptr) error {
 	ret, _, err := unix.Syscall(
 		unix.SYS_BPF,
 		BPF_MAP_LOOKUP_ELEM,
-		structPtr,
+		uintptr(structPtr),
 		sizeOfStruct,
 	)
 	if option.Config.MetricsConfig.BPFSyscallDurationEnabled {
@@ -175,7 +178,10 @@ func LookupElement(fd int, key, value unsafe.Pointer) error {
 		value: uint64(uintptr(value)),
 	}
 
-	return LookupElementFromPointers(fd, uintptr(unsafe.Pointer(&uba)), unsafe.Sizeof(uba))
+	ret := LookupElementFromPointers(fd, unsafe.Pointer(&uba), unsafe.Sizeof(uba))
+	runtime.KeepAlive(key)
+	runtime.KeepAlive(value)
+	return ret
 }
 
 func deleteElement(fd int, key unsafe.Pointer) (uintptr, syscall.Errno) {
@@ -193,6 +199,7 @@ func deleteElement(fd int, key unsafe.Pointer) (uintptr, syscall.Errno) {
 		uintptr(unsafe.Pointer(&uba)),
 		unsafe.Sizeof(uba),
 	)
+	runtime.KeepAlive(key)
 	runtime.KeepAlive(uba)
 	if option.Config.MetricsConfig.BPFSyscallDurationEnabled {
 		metrics.BPFSyscallDuration.WithLabelValues(metricOpDelete, metrics.Errno2Outcome(err)).Observe(duration.End(err == 0).Total().Seconds())
@@ -213,7 +220,7 @@ func DeleteElement(fd int, key unsafe.Pointer) error {
 }
 
 // GetNextKeyFromPointers stores, in nextKey, the next key after the key of the map in fd.
-func GetNextKeyFromPointers(fd int, structPtr, sizeOfStruct uintptr) error {
+func GetNextKeyFromPointers(fd int, structPtr unsafe.Pointer, sizeOfStruct uintptr) error {
 
 	var duration *spanstat.SpanStat
 	if option.Config.MetricsConfig.BPFSyscallDurationEnabled {
@@ -222,9 +229,10 @@ func GetNextKeyFromPointers(fd int, structPtr, sizeOfStruct uintptr) error {
 	ret, _, err := unix.Syscall(
 		unix.SYS_BPF,
 		BPF_MAP_GET_NEXT_KEY,
-		structPtr,
+		uintptr(structPtr),
 		sizeOfStruct,
 	)
+	runtime.KeepAlive(structPtr)
 	if option.Config.MetricsConfig.BPFSyscallDurationEnabled {
 		metrics.BPFSyscallDuration.WithLabelValues(metricOpGetNextKey, metrics.Errno2Outcome(err)).Observe(duration.End(err == 0).Total().Seconds())
 	}
@@ -245,10 +253,10 @@ func GetNextKey(fd int, key, nextKey unsafe.Pointer) error {
 		value: uint64(uintptr(nextKey)),
 	}
 
-	ret := GetNextKeyFromPointers(fd, uintptr(unsafe.Pointer(&uba)), unsafe.Sizeof(uba))
-	runtime.KeepAlive(uba)
+	ret := GetNextKeyFromPointers(fd, unsafe.Pointer(&uba), unsafe.Sizeof(uba))
 	runtime.KeepAlive(key)
 	runtime.KeepAlive(nextKey)
+	runtime.KeepAlive(uba)
 	return ret
 }
 
@@ -260,9 +268,9 @@ func GetFirstKey(fd int, nextKey unsafe.Pointer) error {
 		value: uint64(uintptr(nextKey)),
 	}
 
-	ret := GetNextKeyFromPointers(fd, uintptr(unsafe.Pointer(&uba)), unsafe.Sizeof(uba))
-	runtime.KeepAlive(uba)
+	ret := GetNextKeyFromPointers(fd, unsafe.Pointer(&uba), unsafe.Sizeof(uba))
 	runtime.KeepAlive(nextKey)
+	runtime.KeepAlive(uba)
 	return ret
 }
 

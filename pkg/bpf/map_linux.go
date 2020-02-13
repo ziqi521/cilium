@@ -566,7 +566,7 @@ func (m *Map) DumpWithCallback(cb DumpCallback) error {
 		key:   uint64(uintptr(unsafe.Pointer(&key[0]))),
 		value: uint64(uintptr(unsafe.Pointer(&nextKey[0]))),
 	}
-	bpfCurrentKeyPtr := uintptr(unsafe.Pointer(&bpfCurrentKey))
+	bpfCurrentKeyPtr := unsafe.Pointer(&bpfCurrentKey)
 	bpfCurrentKeySize := unsafe.Sizeof(bpfCurrentKey)
 
 	bpfNextKey := bpfAttrMapOpElem{
@@ -575,7 +575,7 @@ func (m *Map) DumpWithCallback(cb DumpCallback) error {
 		value: uint64(uintptr(unsafe.Pointer(&value[0]))),
 	}
 
-	bpfNextKeyPtr := uintptr(unsafe.Pointer(&bpfNextKey))
+	bpfNextKeyPtr := unsafe.Pointer(&bpfNextKey)
 	bpfNextKeySize := unsafe.Sizeof(bpfNextKey)
 
 	for {
@@ -600,10 +600,11 @@ func (m *Map) DumpWithCallback(cb DumpCallback) error {
 			break
 		}
 	}
-	runtime.KeepAlive(bpfCurrentKey)
-	runtime.KeepAlive(bpfNextKey)
+	runtime.KeepAlive(key)
 	runtime.KeepAlive(nextKey)
+	runtime.KeepAlive(bpfCurrentKey)
 	runtime.KeepAlive(value)
+	runtime.KeepAlive(bpfNextKey)
 
 	return nil
 }
@@ -664,7 +665,7 @@ func (m *Map) DumpReliablyWithCallback(cb DumpCallback, stats *DumpStats) error 
 		key:   uint64(uintptr(unsafe.Pointer(&currentKey[0]))),
 		value: uint64(uintptr(unsafe.Pointer(&value[0]))),
 	}
-	bpfCurrentKeyPtr := uintptr(unsafe.Pointer(&bpfCurrentKey))
+	bpfCurrentKeyPtr := unsafe.Pointer(&bpfCurrentKey)
 	bpfCurrentKeySize := unsafe.Sizeof(bpfCurrentKey)
 
 	bpfNextKey := bpfAttrMapOpElem{
@@ -673,7 +674,7 @@ func (m *Map) DumpReliablyWithCallback(cb DumpCallback, stats *DumpStats) error 
 		value: uint64(uintptr(unsafe.Pointer(&nextKey[0]))),
 	}
 
-	bpfNextKeyPtr := uintptr(unsafe.Pointer(&bpfNextKey))
+	bpfNextKeyPtr := unsafe.Pointer(&bpfNextKey)
 	bpfNextKeySize := unsafe.Sizeof(bpfNextKey)
 
 	for stats.Lookup = 1; stats.Lookup <= stats.MaxEntries; stats.Lookup++ {
@@ -727,6 +728,7 @@ func (m *Map) DumpReliablyWithCallback(cb DumpCallback, stats *DumpStats) error 
 	runtime.KeepAlive(currentKey)
 	runtime.KeepAlive(value)
 	runtime.KeepAlive(bpfCurrentKey)
+	runtime.KeepAlive(nextKey)
 	runtime.KeepAlive(bpfNextKey)
 
 	return nil

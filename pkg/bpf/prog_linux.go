@@ -125,8 +125,8 @@ func GetProgInfoByFD(fd int) (ProgInfo, error) {
 		duration = spanstat.Start()
 	}
 	ret, _, err := unix.Syscall(unix.SYS_BPF, BPF_OBJ_GET_INFO_BY_FD, uintptr(unsafe.Pointer(&attr)), unsafe.Sizeof(attr))
-	runtime.KeepAlive(attrInfo)
 	runtime.KeepAlive(info)
+	runtime.KeepAlive(attrInfo)
 	if option.Config.MetricsConfig.BPFSyscallDurationEnabled {
 		metrics.BPFSyscallDuration.WithLabelValues(metricOpObjGetInfoByFD, metrics.Errno2Outcome(err)).Observe(duration.End(err == 0).Total().Seconds())
 	}
