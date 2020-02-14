@@ -289,6 +289,22 @@ func (s *Service) GetDeepCopyServiceByID(id lb.ServiceID) (*lb.SVC, bool) {
 	return svc.deepCopyToLBSVC(), true
 }
 
+// GetDeepCopyServiceByHash returns a deep-copy of a service identified with
+// the given hash.
+//
+// If a service cannot be found, returns false.
+func (s *Service) GetDeepCopyServiceByAddr(addr lb.L3n4Addr) (*lb.SVC, bool) {
+	s.RLock()
+	defer s.RUnlock()
+
+	svc, found := s.svcByHash[addr.Hash()]
+	if !found {
+		return nil, false
+	}
+
+	return svc.deepCopyToLBSVC(), true
+}
+
 // GetDeepCopyServices returns a deep-copy of all installed services.
 func (s *Service) GetDeepCopyServices() []*lb.SVC {
 	s.RLock()

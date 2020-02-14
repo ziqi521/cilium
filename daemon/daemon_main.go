@@ -26,6 +26,19 @@ import (
 	"strings"
 	"time"
 
+	hubbleServe "github.com/cilium/hubble/cmd/serve"
+	"github.com/cilium/hubble/pkg/parser"
+	hubbleServer "github.com/cilium/hubble/pkg/server"
+	"github.com/go-openapi/loads"
+	gops "github.com/google/gops/agent"
+	"github.com/jessevdk/go-flags"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+	"github.com/vishvananda/netlink"
+	"go.uber.org/zap"
+	"google.golang.org/grpc"
+
 	"github.com/cilium/cilium/api/v1/server"
 	"github.com/cilium/cilium/api/v1/server/restapi"
 	"github.com/cilium/cilium/common"
@@ -42,7 +55,9 @@ import (
 	"github.com/cilium/cilium/pkg/defaults"
 	"github.com/cilium/cilium/pkg/envoy"
 	"github.com/cilium/cilium/pkg/flowdebug"
+	"github.com/cilium/cilium/pkg/hubble"
 	"github.com/cilium/cilium/pkg/identity"
+	"github.com/cilium/cilium/pkg/ipcache"
 	"github.com/cilium/cilium/pkg/k8s"
 	"github.com/cilium/cilium/pkg/k8s/watchers"
 	"github.com/cilium/cilium/pkg/kvstore"
@@ -52,6 +67,7 @@ import (
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/maps/ctmap/gc"
 	"github.com/cilium/cilium/pkg/metrics"
+	"github.com/cilium/cilium/pkg/monitor/agent"
 	monitorAPI "github.com/cilium/cilium/pkg/monitor/api"
 	"github.com/cilium/cilium/pkg/node"
 	"github.com/cilium/cilium/pkg/option"
@@ -60,15 +76,6 @@ import (
 	"github.com/cilium/cilium/pkg/pprof"
 	"github.com/cilium/cilium/pkg/probe"
 	"github.com/cilium/cilium/pkg/version"
-
-	"github.com/go-openapi/loads"
-	gops "github.com/google/gops/agent"
-	"github.com/jessevdk/go-flags"
-	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
-	"github.com/vishvananda/netlink"
-	"google.golang.org/grpc"
 )
 
 const (
@@ -1304,6 +1311,7 @@ func runDaemon() {
 
 	bootstrapStats.overall.End(true)
 	bootstrapStats.updateMetrics()
+	d.runHubble()
 
 	select {
 	case err := <-metricsErrs:
@@ -1564,4 +1572,22 @@ func initKubeProxyReplacementOptions() {
 	if !option.Config.EnableNodePort {
 		option.Config.EnableExternalIPs = false
 	}
+}
+
+func (d *Daemon) runHubble() {
+	log.Info("Initializing hubble")
+	logger, _ := zap.NewDevelopment()
+	epDNSGetter := hubble.NewLocalEndpointDNSGetter(d.endpointManager)
+	identityGetter := hubble.NewLocalIdentityGetter(d.identityAllocator)
+	ipGetter := hubble.NewLocalIPGetter(ipcache.IPIdentityCache)
+	serviceGetter := hubble.NewLocalServiceGetter(d.svc)
+	payloadParser, _ := parser.New(epDNSGetter, identityGetter, epDNSGetter, ipGetter, serviceGetter)
+	s := hubbleServer.NewLocalServer(
+		payloadParser,
+		131071,
+		zap.L(),
+	)
+	go s.Start()
+	d.monitorAgent.GetMonitor().RegisterNewListener(context.TODO(), agent.NewHubbleListener(s))
+	hubbleServe.Serve(logger, []string{"0.0.0.0:50051"}, s)
 }
