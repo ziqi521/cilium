@@ -16,6 +16,7 @@ package probes
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -29,6 +30,10 @@ var (
 	log          = logging.DefaultLogger.WithField(logfields.LogSubsys, "probes")
 	once         sync.Once
 	probeManager *ProbeManager
+
+	// ErrKernelConfigNotFound represents the error if kernel config is unavailable
+	// to the cilium agent.
+	ErrKernelConfigNotFound = errors.New("CONFIG_BPF kernel parameter not found")
 )
 
 // KernelParam is a type based on string which represents CONFIG_* kernel
@@ -156,7 +161,7 @@ func (p *ProbeManager) SystemConfigProbes() error {
 	config := p.features.SystemConfig
 	// Required
 	if !config.ConfigBpf.Enabled() {
-		return fmt.Errorf("CONFIG_BPF kernel parameter is required")
+		return ErrKernelConfigNotFound
 	}
 	if !config.ConfigBpfSyscall.Enabled() {
 		return fmt.Errorf(
