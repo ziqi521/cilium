@@ -473,6 +473,8 @@ postcheck: build
 	$(QUIET)$(MAKE) $(SUBMAKEOPTS) -C Documentation update-cmdref check-cmdref
 	@$(ECHO_CHECK) contrib/scripts/lock-check.sh
 	$(QUIET) contrib/scripts/lock-check.sh
+	@$(ECHO_CHECK) contrib/scripts/check-helm-quick-install.sh
+	$(QUIET) HELM_VERSION=$(HELM_VERSION) contrib/scripts/check-helm-quick-install.sh
 
 minikube:
 	$(QUIET) contrib/scripts/minikube.sh

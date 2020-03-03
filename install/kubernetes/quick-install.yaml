@@ -161,6 +161,10 @@ data:
   synchronize-k8s-nodes: "true"
   policy-audit-mode: "false"
   operator-api-serve-addr: '127.0.0.1:9234'
+
+
+  # A space separated list of iptables chains to disable when installing feeder rules.
+  disable-iptables-feeder-rules: ""
 ---
 # Source: cilium/charts/agent/templates/clusterrole.yaml
 apiVersion: rbac.authorization.k8s.io/v1

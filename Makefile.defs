@@ -100,3 +100,5 @@ ifeq ($(shell uname -m),aarch64)
 else
     ETCD_IMAGE=quay.io/coreos/etcd:v3.2.17
 endif
+
+HELM_VERSION?=3.1.1
