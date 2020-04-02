@@ -90,24 +90,9 @@ func (n *Node) PrepareIPAllocation(scopedLog *logrus.Entry) (a *ipam.AllocationA
 				"availableOnInterface": availableOnInterface,
 			}).Debug("Interface has IPs available")
 
-			preferredPoolIDs := []ipamTypes.PoolID{}
-			for _, address := range iface.Addresses {
-				if address.Subnet != "" {
-					preferredPoolIDs = append(preferredPoolIDs, ipamTypes.PoolID(address.Subnet))
-				}
-			}
-
-			poolID, available := n.manager.getAllocator().FirstPoolWithAvailableQuota(preferredPoolIDs)
-			if poolID != ipamTypes.PoolNotExists {
-				scopedLog.WithFields(logrus.Fields{
-					"subnetID":           poolID,
-					"availableAddresses": available,
-				}).Debug("Subnet has IPs available")
-
-				a.InterfaceID = iface.ID
-				a.PoolID = poolID
-				a.AvailableForAllocation = math.IntMin(available, availableOnInterface)
-			}
+			a.InterfaceID = iface.ID
+			a.PoolID = ipamTypes.PoolID(iface.Addresses[0].Subnet)
+			a.AvailableForAllocation = availableOnInterface
 		}
 		return nil
 	})
@@ -117,17 +102,9 @@ func (n *Node) PrepareIPAllocation(scopedLog *logrus.Entry) (a *ipam.AllocationA
 
 // AllocateIPs performs the Azure IP allocation operation
 func (n *Node) AllocateIPs(ctx context.Context, a *ipam.AllocationAction) error {
-	ips, err := n.manager.getAllocator().AllocateMany(a.PoolID, a.AvailableForAllocation)
-	if err != nil {
+	if err := n.manager.api.AssignPrivateIpAddresses(ctx, string(a.PoolID), a.InterfaceID, a.AvailableForAllocation); err != nil {
 		return err
 	}
-
-	err = n.manager.api.AssignPrivateIpAddresses(ctx, string(a.PoolID), a.InterfaceID, ips)
-	if err != nil {
-		n.manager.getAllocator().ReleaseMany(a.PoolID, ips)
-		return err
-	}
-
 	return nil
 }
 
