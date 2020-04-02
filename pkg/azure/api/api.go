@@ -73,11 +73,11 @@ func NewClient(subscriptionID, resourceGroup string, metrics MetricsAPI, rateLim
 	}
 
 	c.interfaces.Authorizer = authorizer
-	c.interfaces.AddToUserAgent(userAgent)
+	_ = c.interfaces.AddToUserAgent(userAgent)
 	c.virtualnetworks.Authorizer = authorizer
-	c.virtualnetworks.AddToUserAgent(userAgent)
+	_ = c.virtualnetworks.AddToUserAgent(userAgent)
 	c.vmscalesets.Authorizer = authorizer
-	c.vmscalesets.AddToUserAgent(userAgent)
+	_ = c.vmscalesets.AddToUserAgent(userAgent)
 
 	return c, nil
 }
