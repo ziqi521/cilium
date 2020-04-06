@@ -72,6 +72,9 @@ versionwarning_body_selector = "div.document"
 
 # The version of Go used to compile Cilium
 go_release = open("../GO_VERSION", "r").read().strip()
+helm_version = re.search(
+    'HELM_VERSION\?=(\d.\d.\d)',
+     open("../Makefile.defs", "r").read()).group(1)
 
 # Fetch the docs version from an environment variable.
 # Map latest -> master.
@@ -115,7 +118,9 @@ rst_epilog = """
 .. |NEXT_RELEASE| replace:: \{n}
 .. |CHART_RELEASE| replace:: \{h}
 .. |GO_RELEASE| replace:: \{g}
-""".format(s=scm_web, b=branch, a=archive_name, f=archive_filename, l=archive_link, c=current_release, n=next_release, h=chart_release, g=go_release)
+.. |HELM_VERSION| replace:: \{hv}
+""".format(s=scm_web, b=branch, a=archive_name, f=archive_filename, l=archive_link, c=current_release, n=next_release,
+           h=chart_release, g=go_release, hv=helm_version)
 
 extlinks = {
     'git-tree': (scm_web + "/%s", ''),

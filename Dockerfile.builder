@@ -14,7 +14,8 @@ WORKDIR /go/src/github.com/cilium/cilium
 ENV GOROOT /usr/local/go
 ENV GOPATH /go
 ENV PATH "$GOROOT/bin:$GOPATH/bin:$PATH"
-ENV GO_VERSION 1.14.1
+ENV GO_VERSION 1.14
+ENV HELM_VERSION 3.1.2
 
 #
 # Build dependencies
@@ -55,3 +56,9 @@ RUN apt-get update \
 RUN curl -sfL https://dl.google.com/go/go${GO_VERSION}.linux-amd64.tar.gz | tar -xzC /usr/local && \
         GO111MODULE=on go get github.com/gordonklaus/ineffassign@1003c8bd00dc2869cb5ca5282e6ce33834fed514 && \
         go clean -cache -modcache
+
+#
+# Install Helm
+#
+RUN curl -sfL https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz | tar -xzC /tmp && \
+    mv /tmp/linux-amd64/helm /usr/local/bin

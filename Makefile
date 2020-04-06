@@ -486,6 +486,10 @@ update-golang-dockerfiles:
 	$(QUIET) for fl in $(shell find . -path ./vendor -prune -o -name "*Dockerfile*" -print) ; do sed -i 's/golang:.* /golang:$(GO_VERSION) as /g' $$fl ; done
 	@echo "Updated go version in Dockerfiles to $(GO_VERSION)"
 
+update-helm-dockerfiles:
+	$(QUIET) sed -i 's/HELM_VERSION .*/HELM_VERSION $(HELM_VERSION)/g' Dockerfile.builder
+	@echo "Updated helm version in Dockerfile to $(HELM_VERSION)"
+
 update-travis-go-version:
 	$(QUIET) sed -e 's/TRAVIS_GO_VERSION/$(GO_VERSION)/g' .travis.yml.tmpl > .travis.yml
 	@echo "Updated go version in .travis.yml to $(GO_VERSION)"
