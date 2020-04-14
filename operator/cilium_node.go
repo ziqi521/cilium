@@ -120,7 +120,7 @@ func (c *ciliumNodeUpdateImplementation) UpdateStatus(origNode, node *v2.CiliumN
 	return nil, nil
 }
 
-func (c *ciliumNodeUpdateImplementation) Update(node, origNode *v2.CiliumNode) (*v2.CiliumNode, error) {
+func (c *ciliumNodeUpdateImplementation) Update(origNode, node *v2.CiliumNode) (*v2.CiliumNode, error) {
 	// If k8s supports status as a sub-resource, then we need to update the status separately
 	k8sCapabilities := k8sversion.Capabilities()
 	switch {
