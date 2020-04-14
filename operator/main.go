@@ -178,6 +178,27 @@ func runOperator(cmd *cobra.Command) {
 
 		startSynchronizingCiliumNodes(nm)
 		nodeManager = &nm
+
+		switch ipamMode {
+		case option.IPAMOperator:
+			// We will use CiliumNodes as the source of truth for the podCIDRs.
+			// Once the CiliumNodes are synchronized with the operator we will
+			// be able to watch for K8s Node events which they will be used
+			// to create the remaining CiliumNodes.
+			<-k8sCiliumNodesCacheSynced
+
+			// Run this in a go routine because we will need to watch
+			// for nodes and if the user has also setup KVStore this would
+			// block as the nodeWatcher depends on the KVStore and the KVStore
+			// is only configured bellow.
+			// We can call this function multiple times since it's backed by a
+			// sync.Once
+			go func() {
+				if err := runNodeWatcher(nodeManager); err != nil {
+					log.WithError(err).Error("Unable to setup node watcher")
+				}
+			}()
+		}
 	}
 
 	if kvstoreEnabled() {
