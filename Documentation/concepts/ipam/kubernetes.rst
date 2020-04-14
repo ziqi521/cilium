@@ -4,6 +4,8 @@
     Please use the official rendered version released here:
     https://docs.cilium.io
 
+.. _ipam_k8s:
+
 #####################
 Kubernetes Host Scope
 #####################
