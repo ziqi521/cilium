@@ -21,14 +21,14 @@ import (
 	"testing"
 
 	pb "github.com/cilium/cilium/api/v1/flow"
+	"github.com/cilium/cilium/api/v1/observer"
 	v1 "github.com/cilium/cilium/pkg/hubble/api/v1"
-
 	"github.com/stretchr/testify/assert"
 )
 
 func TestFQDNFilter(t *testing.T) {
 	type args struct {
-		f  []*pb.FlowFilter
+		f  []*observer.EventFilter
 		ev []*v1.Event
 	}
 	tests := []struct {
@@ -40,8 +40,14 @@ func TestFQDNFilter(t *testing.T) {
 		{
 			name: "source fqdn",
 			args: args{
-				f: []*pb.FlowFilter{
-					{SourceFqdn: []string{"cilium.io", "ebpf.io"}},
+				f: []*observer.EventFilter{
+					{
+						Filter: &observer.EventFilter_FlowFilter{
+							FlowFilter: &pb.FlowFilter{
+								SourceFqdn: []string{"cilium.io", "ebpf.io"},
+							},
+						},
+					},
 				},
 				ev: []*v1.Event{
 					{Event: &pb.Flow{SourceNames: []string{"cilium.io"}}},
@@ -60,8 +66,14 @@ func TestFQDNFilter(t *testing.T) {
 		{
 			name: "destination fqdn",
 			args: args{
-				f: []*pb.FlowFilter{
-					{DestinationFqdn: []string{"cilium.io", "ebpf.io"}},
+				f: []*observer.EventFilter{
+					{
+						Filter: &observer.EventFilter_FlowFilter{
+							FlowFilter: &pb.FlowFilter{
+								DestinationFqdn: []string{"cilium.io", "ebpf.io"},
+							},
+						},
+					},
 				},
 				ev: []*v1.Event{
 					{Event: &pb.Flow{SourceNames: []string{"cilium.io"}}},
@@ -80,10 +92,14 @@ func TestFQDNFilter(t *testing.T) {
 		{
 			name: "source and destination fqdn",
 			args: args{
-				f: []*pb.FlowFilter{
+				f: []*observer.EventFilter{
 					{
-						SourceFqdn:      []string{"cilium.io", "docs.cilium.io"},
-						DestinationFqdn: []string{"ebpf.io"},
+						Filter: &observer.EventFilter_FlowFilter{
+							FlowFilter: &pb.FlowFilter{
+								SourceFqdn:      []string{"cilium.io", "docs.cilium.io"},
+								DestinationFqdn: []string{"ebpf.io"},
+							},
+						},
 					},
 				},
 				ev: []*v1.Event{
@@ -110,9 +126,21 @@ func TestFQDNFilter(t *testing.T) {
 		{
 			name: "source or destination fqdn",
 			args: args{
-				f: []*pb.FlowFilter{
-					{SourceFqdn: []string{"cilium.io", "docs.cilium.io"}},
-					{DestinationFqdn: []string{"ebpf.io"}},
+				f: []*observer.EventFilter{
+					{
+						Filter: &observer.EventFilter_FlowFilter{
+							FlowFilter: &pb.FlowFilter{
+								SourceFqdn: []string{"cilium.io", "docs.cilium.io"},
+							},
+						},
+					},
+					{
+						Filter: &observer.EventFilter_FlowFilter{
+							FlowFilter: &pb.FlowFilter{
+								DestinationFqdn: []string{"ebpf.io"},
+							},
+						},
+					},
 				},
 				ev: []*v1.Event{
 					{Event: &pb.Flow{
@@ -146,8 +174,14 @@ func TestFQDNFilter(t *testing.T) {
 		{
 			name: "invalid data",
 			args: args{
-				f: []*pb.FlowFilter{
-					{SourceFqdn: []string{"cilium.io."}},
+				f: []*observer.EventFilter{
+					{
+						Filter: &observer.EventFilter_FlowFilter{
+							FlowFilter: &pb.FlowFilter{
+								SourceFqdn: []string{"cilium.io."},
+							},
+						},
+					},
 				},
 				ev: []*v1.Event{
 					nil,
@@ -170,8 +204,14 @@ func TestFQDNFilter(t *testing.T) {
 		{
 			name: "invalid source fqdn filter",
 			args: args{
-				f: []*pb.FlowFilter{
-					{SourceFqdn: []string{""}},
+				f: []*observer.EventFilter{
+					{
+						Filter: &observer.EventFilter_FlowFilter{
+							FlowFilter: &pb.FlowFilter{
+								SourceFqdn: []string{""},
+							},
+						},
+					},
 				},
 			},
 			wantErr: true,
@@ -179,8 +219,14 @@ func TestFQDNFilter(t *testing.T) {
 		{
 			name: "invalid destination fqdn filter",
 			args: args{
-				f: []*pb.FlowFilter{
-					{DestinationFqdn: []string{"."}},
+				f: []*observer.EventFilter{
+					{
+						Filter: &observer.EventFilter_FlowFilter{
+							FlowFilter: &pb.FlowFilter{
+								DestinationFqdn: []string{"."},
+							},
+						},
+					},
 				},
 			},
 			wantErr: true,
@@ -188,9 +234,21 @@ func TestFQDNFilter(t *testing.T) {
 		{
 			name: "wildcard filters",
 			args: args{
-				f: []*pb.FlowFilter{
-					{SourceFqdn: []string{"*.cilium.io", "*.org."}},
-					{DestinationFqdn: []string{"*"}},
+				f: []*observer.EventFilter{
+					{
+						Filter: &observer.EventFilter_FlowFilter{
+							FlowFilter: &pb.FlowFilter{
+								SourceFqdn: []string{"*.cilium.io", "*.org."},
+							},
+						},
+					},
+					{
+						Filter: &observer.EventFilter_FlowFilter{
+							FlowFilter: &pb.FlowFilter{
+								DestinationFqdn: []string{"*"},
+							},
+						},
+					},
 				},
 				ev: []*v1.Event{
 					{Event: &pb.Flow{SourceNames: []string{"www.cilium.io"}}},
@@ -231,7 +289,7 @@ func TestFQDNFilter(t *testing.T) {
 
 func Test_filterByDNSQuery(t *testing.T) {
 	type args struct {
-		f  []*pb.FlowFilter
+		f  []*observer.EventFilter
 		ev *v1.Event
 	}
 	tests := []struct {

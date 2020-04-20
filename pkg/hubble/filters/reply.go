@@ -17,7 +17,7 @@ package filters
 import (
 	"context"
 
-	pb "github.com/cilium/cilium/api/v1/flow"
+	"github.com/cilium/cilium/api/v1/observer"
 	v1 "github.com/cilium/cilium/pkg/hubble/api/v1"
 )
 
@@ -43,8 +43,9 @@ func filterByReplyField(replyParams []bool) FilterFunc {
 type ReplyFilter struct{}
 
 // OnBuildFilter builds a reply filter
-func (r *ReplyFilter) OnBuildFilter(ctx context.Context, ff *pb.FlowFilter) ([]FilterFunc, error) {
+func (e *ReplyFilter) OnBuildFilter(ctx context.Context, ef *observer.EventFilter) ([]FilterFunc, error) {
 	var fs []FilterFunc
+	ff := ef.GetFlowFilter()
 
 	if ff.GetReply() != nil {
 		fs = append(fs, filterByReplyField(ff.GetReply()))

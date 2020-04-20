@@ -18,6 +18,7 @@ import (
 	"context"
 
 	pb "github.com/cilium/cilium/api/v1/flow"
+	"github.com/cilium/cilium/api/v1/observer"
 	v1 "github.com/cilium/cilium/pkg/hubble/api/v1"
 )
 
@@ -41,8 +42,9 @@ func filterByVerdicts(vs []pb.Verdict) FilterFunc {
 type VerdictFilter struct{}
 
 // OnBuildFilter builds a forwarding verdict filter
-func (v *VerdictFilter) OnBuildFilter(ctx context.Context, ff *pb.FlowFilter) ([]FilterFunc, error) {
+func (e *VerdictFilter) OnBuildFilter(ctx context.Context, ef *observer.EventFilter) ([]FilterFunc, error) {
 	var fs []FilterFunc
+	ff := ef.GetFlowFilter()
 
 	if ff.GetVerdict() != nil {
 		fs = append(fs, filterByVerdicts(ff.GetVerdict()))

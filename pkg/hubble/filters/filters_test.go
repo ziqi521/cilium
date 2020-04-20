@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	pb "github.com/cilium/cilium/api/v1/flow"
+	"github.com/cilium/cilium/api/v1/observer"
 	v1 "github.com/cilium/cilium/pkg/hubble/api/v1"
 	"github.com/stretchr/testify/assert"
 )
@@ -84,35 +85,47 @@ func TestMatch(t *testing.T) {
 
 type testFilterTrue struct{}
 
-func (t *testFilterTrue) OnBuildFilter(_ context.Context, ff *pb.FlowFilter) ([]FilterFunc, error) {
+func (t *testFilterTrue) OnBuildFilter(_ context.Context, ef *observer.EventFilter) ([]FilterFunc, error) {
 	return []FilterFunc{func(ev *v1.Event) bool { return true }}, nil
 }
 
 type testFilterFalse struct{}
 
-func (t *testFilterFalse) OnBuildFilter(_ context.Context, ff *pb.FlowFilter) ([]FilterFunc, error) {
+func (t *testFilterFalse) OnBuildFilter(_ context.Context, ef *observer.EventFilter) ([]FilterFunc, error) {
 	return []FilterFunc{func(ev *v1.Event) bool { return false }}, nil
 }
 
 func TestOnBuildFilter(t *testing.T) {
 	fl, err := BuildFilterList(context.Background(),
-		[]*pb.FlowFilter{{SourceIdentity: []uint64{1, 2, 3}}}, // true
-		[]OnBuildFilter{&testFilterTrue{}})                    // true
+		[]*observer.EventFilter{{
+			Filter: &observer.EventFilter_FlowFilter{
+				FlowFilter: &pb.FlowFilter{SourceIdentity: []uint64{1, 2, 3}},
+			},
+		}},
+		[]OnBuildFilter{&testFilterTrue{}}) // true
 	assert.NoError(t, err)
 	assert.Equal(t, true, fl.MatchAll(&v1.Event{Event: &pb.Flow{
 		Source: &pb.Endpoint{Identity: 3},
 	}}))
 
 	fl, err = BuildFilterList(context.Background(),
-		[]*pb.FlowFilter{{SourceIdentity: []uint64{1, 2, 3}}}, // true
-		[]OnBuildFilter{&testFilterFalse{}})                   // false
+		[]*observer.EventFilter{{
+			Filter: &observer.EventFilter_FlowFilter{
+				FlowFilter: &pb.FlowFilter{SourceIdentity: []uint64{1, 2, 3}},
+			},
+		}},
+		[]OnBuildFilter{&testFilterFalse{}}) // false
 	assert.NoError(t, err)
 	assert.Equal(t, false, fl.MatchAll(&v1.Event{Event: &pb.Flow{
 		Source: &pb.Endpoint{Identity: 3},
 	}}))
 
 	fl, err = BuildFilterList(context.Background(),
-		[]*pb.FlowFilter{{SourceIdentity: []uint64{1, 2, 3}}}, // true
+		[]*observer.EventFilter{{
+			Filter: &observer.EventFilter_FlowFilter{
+				FlowFilter: &pb.FlowFilter{SourceIdentity: []uint64{1, 2, 3}},
+			},
+		}},
 		[]OnBuildFilter{
 			&testFilterFalse{}, // false
 			&testFilterTrue{}}) // true

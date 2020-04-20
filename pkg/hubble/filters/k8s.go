@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	pb "github.com/cilium/cilium/api/v1/flow"
+	"github.com/cilium/cilium/api/v1/observer"
 	v1 "github.com/cilium/cilium/pkg/hubble/api/v1"
 	"github.com/cilium/cilium/pkg/hubble/k8s"
 )
@@ -75,8 +75,9 @@ func filterByNamespacedName(names []string, getName func(*v1.Event) (ns, name st
 type PodFilter struct{}
 
 // OnBuildFilter builds a Kubernetes pod name filter
-func (p *PodFilter) OnBuildFilter(ctx context.Context, ff *pb.FlowFilter) ([]FilterFunc, error) {
+func (e *PodFilter) OnBuildFilter(ctx context.Context, ef *observer.EventFilter) ([]FilterFunc, error) {
 	var fs []FilterFunc
+	ff := ef.GetFlowFilter()
 
 	if ff.GetSourcePod() != nil {
 		pf, err := filterByNamespacedName(ff.GetSourcePod(), sourcePod)
@@ -101,8 +102,9 @@ func (p *PodFilter) OnBuildFilter(ctx context.Context, ff *pb.FlowFilter) ([]Fil
 type ServiceFilter struct{}
 
 // OnBuildFilter builds a Kubernetes service name filter
-func (s *ServiceFilter) OnBuildFilter(ctx context.Context, ff *pb.FlowFilter) ([]FilterFunc, error) {
+func (e *ServiceFilter) OnBuildFilter(ctx context.Context, ef *observer.EventFilter) ([]FilterFunc, error) {
 	var fs []FilterFunc
+	ff := ef.GetFlowFilter()
 
 	if ff.GetSourceService() != nil {
 		ssf, err := filterByNamespacedName(ff.GetSourceService(), sourceService)

@@ -88,3 +88,14 @@ message GetFlowsResponse {
     // Timestamp at which this event was observed.
     google.protobuf.Timestamp time = 1001;
 }
+
+enum ObserverEventType {
+    UNKNOWN_EVENT = 0;
+    FLOW = 1;
+}
+
+message EventFilter {
+    oneof filter {
+        flow.FlowFilter flow_filter = 1;
+    }
+}

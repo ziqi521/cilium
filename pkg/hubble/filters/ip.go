@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"net"
 
-	pb "github.com/cilium/cilium/api/v1/flow"
+	"github.com/cilium/cilium/api/v1/observer"
 	v1 "github.com/cilium/cilium/pkg/hubble/api/v1"
 )
 
@@ -59,8 +59,9 @@ func filterByIPs(ips []string, getIP func(*v1.Event) string) (FilterFunc, error)
 type IPFilter struct{}
 
 // OnBuildFilter builds an IP address filter
-func (f *IPFilter) OnBuildFilter(ctx context.Context, ff *pb.FlowFilter) ([]FilterFunc, error) {
+func (e *IPFilter) OnBuildFilter(ctx context.Context, ef *observer.EventFilter) ([]FilterFunc, error) {
 	var fs []FilterFunc
+	ff := ef.GetFlowFilter()
 
 	if ff.GetSourceIp() != nil {
 		ipf, err := filterByIPs(ff.GetSourceIp(), sourceIP)

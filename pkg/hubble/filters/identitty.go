@@ -18,6 +18,7 @@ import (
 	"context"
 
 	pb "github.com/cilium/cilium/api/v1/flow"
+	"github.com/cilium/cilium/api/v1/observer"
 	v1 "github.com/cilium/cilium/pkg/hubble/api/v1"
 )
 
@@ -46,8 +47,9 @@ func filterByIdentity(identities []uint64, getEndpoint func(*v1.Event) *pb.Endpo
 type IdentityFilter struct{}
 
 // OnBuildFilter builds a security identity filter
-func (i *IdentityFilter) OnBuildFilter(ctx context.Context, ff *pb.FlowFilter) ([]FilterFunc, error) {
+func (e *IdentityFilter) OnBuildFilter(ctx context.Context, ef *observer.EventFilter) ([]FilterFunc, error) {
 	var fs []FilterFunc
+	ff := ef.GetFlowFilter()
 
 	if ff.GetSourceIdentity() != nil {
 		fs = append(fs, filterByIdentity(ff.GetSourceIdentity(), sourceEndpoint))

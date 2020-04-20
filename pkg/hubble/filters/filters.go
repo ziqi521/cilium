@@ -17,7 +17,7 @@ package filters
 import (
 	"context"
 
-	pb "github.com/cilium/cilium/api/v1/flow"
+	observer "github.com/cilium/cilium/api/v1/observer"
 	v1 "github.com/cilium/cilium/pkg/hubble/api/v1"
 )
 
@@ -74,28 +74,28 @@ func (fs FilterFuncs) MatchNone(ev *v1.Event) bool {
 	return true
 }
 
-// OnBuildFilter is invoked while building a flow filter
+// OnBuildFilter is invoked while building an event filter
 type OnBuildFilter interface {
-	OnBuildFilter(context.Context, *pb.FlowFilter) ([]FilterFunc, error)
+	OnBuildFilter(context.Context, *observer.EventFilter) ([]FilterFunc, error)
 }
 
 // OnBuildFilterFunc implements OnBuildFilter for a single function
-type OnBuildFilterFunc func(context.Context, *pb.FlowFilter) ([]FilterFunc, error)
+type OnBuildFilterFunc func(context.Context, *observer.EventFilter) ([]FilterFunc, error)
 
-// OnBuildFilter is invoked while building a flow filter
-func (f OnBuildFilterFunc) OnBuildFilter(ctx context.Context, flow *pb.FlowFilter) ([]FilterFunc, error) {
-	return f(ctx, flow)
+// OnBuildFilter is invoked while building an event filter
+func (f OnBuildFilterFunc) OnBuildFilter(ctx context.Context, ef *observer.EventFilter) ([]FilterFunc, error) {
+	return f(ctx, ef)
 }
 
 // BuildFilter builds a filter based on a FlowFilter. It returns:
 // - the FilterFunc to be used to filter packets based on the requested
 //   FlowFilter;
 // - an error in case something went wrong.
-func BuildFilter(ctx context.Context, ff *pb.FlowFilter, auxFilters []OnBuildFilter) (FilterFuncs, error) {
+func BuildFilter(ctx context.Context, ef *observer.EventFilter, auxFilters []OnBuildFilter) (FilterFuncs, error) {
 	var fs []FilterFunc
 
 	for _, f := range auxFilters {
-		fl, err := f.OnBuildFilter(ctx, ff)
+		fl, err := f.OnBuildFilter(ctx, ef)
 		if err != nil {
 			return nil, err
 		}
@@ -112,12 +112,12 @@ func BuildFilter(ctx context.Context, ff *pb.FlowFilter, auxFilters []OnBuildFil
 // - the FilterFunc to be used to filter packets based on the requested
 //   FlowFilter;
 // - an error in case something went wrong.
-func BuildFilterList(ctx context.Context, ff []*pb.FlowFilter, auxFilters []OnBuildFilter) (FilterFuncs, error) {
-	filterList := make([]FilterFunc, 0, len(ff))
+func BuildFilterList(ctx context.Context, ef []*observer.EventFilter, auxFilters []OnBuildFilter) (FilterFuncs, error) {
+	filterList := make([]FilterFunc, 0, len(ef))
 
-	for _, flowFilter := range ff {
+	for _, eventFilter := range ef {
 		// Build filter matching on all requirements of the FlowFilter
-		tf, err := BuildFilter(ctx, flowFilter, auxFilters)
+		tf, err := BuildFilter(ctx, eventFilter, auxFilters)
 		if err != nil {
 			return nil, err
 		}
