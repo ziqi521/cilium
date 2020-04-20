@@ -1,4 +1,3 @@
-// Copyright 2016-2018 Authors of Cilium
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -259,6 +258,8 @@ type DNSDataSource string
 const (
 	// DNSSourceAgentPoller indicates that the DNS record was created by a poll
 	// from cilium-agent.
+	// TODO: Once we know that we won't see events of this sort, we can remove
+	// this constant and places that use it.
 	DNSSourceAgentPoller DNSDataSource = "agent-poller"
 
 	// DNSSourceProxy indicates that the DNS record was created by a proxy

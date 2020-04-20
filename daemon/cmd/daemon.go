@@ -109,9 +109,6 @@ type Daemon struct {
 	// apply to locally running endpoints.
 	dnsNameManager *fqdn.NameManager
 
-	// dnsPoller polls DNS names and sends them to dnsNameManager
-	dnsPoller *fqdn.DNSPoller
-
 	// Used to synchronize generation of daemon's BPF programs and endpoint BPF
 	// programs.
 	compilationMutex *lock.RWMutex

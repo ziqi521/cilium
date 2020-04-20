@@ -249,7 +249,7 @@ var _ = Describe("RuntimeFQDNPolicies", func() {
 
 		areEndpointsReady := vm.WaitEndpointsReady()
 		Expect(areEndpointsReady).Should(BeTrue(), "Endpoints are not ready after timeout")
-		By("Update resolv.conf on host to update the poller")
+		By("Update resolv.conf on host to update the forwarded DNS lookup target")
 
 		// This should be disabled when DNS proxy is in place.
 		vm.ExecWithSudo(`bash -c "echo -e \"nameserver 127.0.0.1\nnameserver 1.1.1.1\" > /etc/resolv.conf"`)
@@ -432,7 +432,7 @@ var _ = Describe("RuntimeFQDNPolicies", func() {
 [
 	{
 		"labels": [{
-			"key": "FQDN test - interaction with other toCIDRSet rules, no poller"
+			"key": "FQDN test - interaction with other toCIDRSet rules"
 		}],
 		"endpointSelector": {
 			"matchLabels": {
@@ -489,7 +489,7 @@ var _ = Describe("RuntimeFQDNPolicies", func() {
 [
 	{
 		"labels": [{
-			"key": "FQDN test - interaction with other toCIDRSet rules, no poller"
+			"key": "FQDN test - interaction with other toCIDRSet rules"
 		}],
 		"endpointSelector": {
 			"matchLabels": {
@@ -859,10 +859,10 @@ var _ = Describe("RuntimeFQDNPolicies", func() {
 		res.ExpectFail("Can connect to %q when it should not work", DNSSECContainerName)
 	})
 
-	Context("toFQDNs populates toCIDRSet when poller is disabled (data from proxy)", func() {
+	Context("toFQDNs populates toCIDRSet  (data from proxy)", func() {
 		var config = `
 PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin
-CILIUM_OPTS=--kvstore consul --kvstore-opt consul.address=127.0.0.1:8500 --debug --pprof=true --log-system-load --tofqdns-enable-poller=false
+CILIUM_OPTS=--kvstore consul --kvstore-opt consul.address=127.0.0.1:8500 --debug --pprof=true --log-system-load
 INITSYSTEM=SYSTEMD`
 		BeforeAll(func() {
 			vm.SetUpCiliumWithOptions(config)
