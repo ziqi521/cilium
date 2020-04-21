@@ -196,18 +196,6 @@ func runOperator(cmd *cobra.Command) {
 			// it can allocate podCIDRs for the nodes that don't have a podCIDR
 			// set.
 			nm.Resync(context.Background(), time.Time{})
-
-			// Run this in a go routine because we will need to watch
-			// for nodes and if the user has also setup KVStore this would
-			// block as the nodeWatcher depends on the KVStore and the KVStore
-			// is only configured bellow.
-			// We can call this function multiple times since it's backed by a
-			// sync.Once
-			go func() {
-				if err := runNodeWatcher(nodeManager); err != nil {
-					log.WithError(err).Error("Unable to setup node watcher")
-				}
-			}()
 		}
 	}
 

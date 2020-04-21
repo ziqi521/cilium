@@ -75,19 +75,6 @@ func runNodeWatcher(nodeManager *allocator.NodeEventHandler) (err error) {
 						if kvstoreEnabled() && option.Config.SyncK8sNodes {
 							ciliumNodeStore.UpdateKeySync(context.TODO(), nodeNew)
 						}
-						switch option.Config.IPAM {
-						case option.IPAMOperator:
-							// If we are running in IPAMOperator mode, it's
-							// the job of the operator to create Cilium node
-							// in k8s. We also don't care about the podCIDRs
-							// allocated by k8s so we set them to nil.
-							// It's safe to do this operation because the
-							// cilium nodes were already synced from k8s
-							// before we start watching for k8s node events.
-							cn := nodeNew.ToCiliumNode()
-							cn.Spec.IPAM.PodCIDRs = nil
-							(*nodeManager).Create(cn)
-						}
 					}
 				},
 				UpdateFunc: func(oldObj, newObj interface{}) {
