@@ -43,134 +43,132 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
-var nodeWatcherOnce sync.Once
+func runNodeWatcher(nodeManager *allocator.NodeEventHandler) error {
+	var (
+		ciliumNodeStore *store.SharedStore
+		addFunc         func(obj interface{})
+		updateFunc      func(old, new interface{})
+	)
 
-func runNodeWatcher(nodeManager *allocator.NodeEventHandler) (err error) {
-	nodeWatcherOnce.Do(func() {
+	if kvstoreEnabled() && option.Config.SyncK8sNodes {
 		log.Info("Starting to synchronize k8s nodes to kvstore...")
-
-		var ciliumNodeStore *store.SharedStore
-		if kvstoreEnabled() && option.Config.SyncK8sNodes {
-			log.Info("Starting to synchronize k8s nodes to kvstore...")
-			ciliumNodeStore, err = store.JoinSharedStore(store.Configuration{
-				Prefix:     nodeStore.NodeStorePrefix,
-				KeyCreator: nodeStore.KeyCreator,
-			})
-			if err != nil {
-				return
-			}
-		} else {
-			log.Info("Starting k8s node watcher...")
+		var err error
+		ciliumNodeStore, err = store.JoinSharedStore(store.Configuration{
+			Prefix:     nodeStore.NodeStorePrefix,
+			KeyCreator: nodeStore.KeyCreator,
+		})
+		if err != nil {
+			return err
 		}
+		addFunc = func(obj interface{}) {
+			if n := k8s.ObjToV1Node(obj); n != nil {
+				nodeNew := k8s.ParseNode(n, source.Kubernetes)
+				if kvstoreEnabled() && option.Config.SyncK8sNodes {
+					ciliumNodeStore.UpdateKeySync(context.TODO(), nodeNew)
+				}
+			}
+		}
+		updateFunc = func(oldObj, newObj interface{}) {
+			if oldNode := k8s.ObjToV1Node(oldObj); oldNode != nil {
+				if newNode := k8s.ObjToV1Node(newObj); newNode != nil {
+					if k8s.EqualV1Node(oldNode, newNode) {
+						return
+					}
+					newNode := k8s.ParseNode(newNode, source.Kubernetes)
+					ciliumNodeStore.UpdateKeySync(context.TODO(), newNode)
+				}
+			}
+		}
+	} else {
+		log.Info("Starting k8s node watcher...")
+	}
 
-		k8sNodeStore, nodeController := informer.NewInformer(
-			cache.NewListWatchFromClient(k8s.Client().CoreV1().RESTClient(),
-				"nodes", meta_v1.NamespaceAll, fields.Everything()),
-			&core_v1.Node{},
-			0,
-			cache.ResourceEventHandlerFuncs{
-				AddFunc: func(obj interface{}) {
-					if n := k8s.ObjToV1Node(obj); n != nil {
-						nodeNew := k8s.ParseNode(n, source.Kubernetes)
-						if kvstoreEnabled() && option.Config.SyncK8sNodes {
-							ciliumNodeStore.UpdateKeySync(context.TODO(), nodeNew)
-						}
+	k8sNodeStore, nodeController := informer.NewInformer(
+		cache.NewListWatchFromClient(k8s.Client().CoreV1().RESTClient(),
+			"nodes", core_v1.NamespaceAll, fields.Everything()),
+		&core_v1.Node{},
+		0,
+		cache.ResourceEventHandlerFuncs{
+			AddFunc:    addFunc,
+			UpdateFunc: updateFunc,
+			DeleteFunc: func(obj interface{}) {
+				n := k8s.ObjToV1Node(obj)
+				if n == nil {
+					deletedObj, ok := obj.(cache.DeletedFinalStateUnknown)
+					if !ok {
+						return
 					}
-				},
-				UpdateFunc: func(oldObj, newObj interface{}) {
-					if oldNode := k8s.ObjToV1Node(oldObj); oldNode != nil {
-						if newNode := k8s.ObjToV1Node(newObj); newNode != nil {
-							if k8s.EqualV1Node(oldNode, newNode) {
-								return
-							}
-							if kvstoreEnabled() && option.Config.SyncK8sNodes {
-								newNode := k8s.ParseNode(newNode, source.Kubernetes)
-								ciliumNodeStore.UpdateKeySync(context.TODO(), newNode)
-							}
-						}
-					}
-				},
-				DeleteFunc: func(obj interface{}) {
-					n := k8s.ObjToV1Node(obj)
+					// Delete was not observed by the watcher but is
+					// removed from kube-apiserver. This is the last
+					// known state and the object no longer exists.
+					n = k8s.ObjToV1Node(deletedObj.Obj)
 					if n == nil {
-						deletedObj, ok := obj.(cache.DeletedFinalStateUnknown)
-						if !ok {
-							return
-						}
-						// Delete was not observed by the watcher but is
-						// removed from kube-apiserver. This is the last
-						// known state and the object no longer exists.
-						n = k8s.ObjToV1Node(deletedObj.Obj)
-						if n == nil {
-							return
-						}
+						return
 					}
-					if kvstoreEnabled() && option.Config.SyncK8sNodes {
-						deletedNode := k8s.ParseNode(n, source.Kubernetes)
-						ciliumNodeStore.DeleteLocalKey(context.TODO(), deletedNode)
-					}
-					deleteCiliumNode(nodeManager, n.Name)
-				},
+				}
+				if kvstoreEnabled() && option.Config.SyncK8sNodes {
+					deletedNode := k8s.ParseNode(n, source.Kubernetes)
+					ciliumNodeStore.DeleteLocalKey(context.TODO(), deletedNode)
+				}
+				deleteCiliumNode(nodeManager, n.Name)
 			},
-			k8s.ConvertToNode,
-		)
-		go nodeController.Run(wait.NeverStop)
+		},
+		k8s.ConvertToNode,
+	)
+	go nodeController.Run(wait.NeverStop)
 
-		go func() {
-			cache.WaitForCacheSync(wait.NeverStop, nodeController.HasSynced)
+	go func() {
+		cache.WaitForCacheSync(wait.NeverStop, nodeController.HasSynced)
 
-			// Since we processed all events received from k8s we know that
-			// at this point the list in k8sNodeStore should be the source of truth
-			// and we need to delete all nodes in the kvNodeStore that are *not*
-			// present in the k8sNodeStore.
+		// Since we processed all events received from k8s we know that
+		// at this point the list in k8sNodeStore should be the source of truth
+		// and we need to delete all nodes in the kvNodeStore that are *not*
+		// present in the k8sNodeStore.
 
-			switch option.Config.IPAM {
-			case option.IPAMENI, option.IPAMAzure, option.IPAMOperator:
-				nodes, err := ciliumK8sClient.CiliumV2().CiliumNodes().List(context.TODO(), meta_v1.ListOptions{})
-				if err != nil {
-					log.WithError(err).Warning("Unable to list CiliumNodes. Won't clean up stale CiliumNodes")
-				} else {
-					for _, node := range nodes.Items {
-						if _, ok, err := k8sNodeStore.GetByKey(node.Name); !ok && err == nil {
-							deleteCiliumNode(nodeManager, node.Name)
-						}
+		switch option.Config.IPAM {
+		case option.IPAMENI, option.IPAMAzure, option.IPAMOperator:
+			nodes, err := ciliumK8sClient.CiliumV2().CiliumNodes().List(context.TODO(), meta_v1.ListOptions{})
+			if err != nil {
+				log.WithError(err).Warning("Unable to list CiliumNodes. Won't clean up stale CiliumNodes")
+			} else {
+				for _, node := range nodes.Items {
+					if _, ok, err := k8sNodeStore.GetByKey(node.Name); !ok && err == nil {
+						deleteCiliumNode(nodeManager, node.Name)
 					}
 				}
-			}
-
-			if kvstoreEnabled() && option.Config.SyncK8sNodes {
-				listOfK8sNodes := k8sNodeStore.ListKeys()
-
-				kvStoreNodes := ciliumNodeStore.SharedKeysMap()
-				for _, k8sNode := range listOfK8sNodes {
-					// The remaining kvStoreNodes are leftovers
-					kvStoreNodeName := nodeTypes.GetKeyNodeName(option.Config.ClusterName, k8sNode)
-					delete(kvStoreNodes, kvStoreNodeName)
-				}
-
-				for _, kvStoreNode := range kvStoreNodes {
-					if strings.HasPrefix(kvStoreNode.GetKeyName(), option.Config.ClusterName) {
-						ciliumNodeStore.DeleteLocalKey(context.TODO(), kvStoreNode)
-					}
-				}
-			}
-		}()
-
-		// FIXME: @aanm add CCNP and CNP node GC for non-kvstore mode
-		if kvstoreEnabled() && option.Config.SyncK8sNodes {
-			if option.Config.EnableCNPNodeStatusGC && option.Config.CNPNodeStatusGCInterval != 0 {
-				go runCNPNodeStatusGC("cnp-node-gc", false, ciliumNodeStore)
-			}
-
-			if option.Config.EnableCCNPNodeStatusGC && option.Config.CNPNodeStatusGCInterval != 0 {
-				go runCNPNodeStatusGC("ccnp-node-gc", true, ciliumNodeStore)
 			}
 		}
 
-		err = nil
-		return
-	})
-	return
+		if kvstoreEnabled() && option.Config.SyncK8sNodes {
+			listOfK8sNodes := k8sNodeStore.ListKeys()
+
+			kvStoreNodes := ciliumNodeStore.SharedKeysMap()
+			for _, k8sNode := range listOfK8sNodes {
+				// The remaining kvStoreNodes are leftovers
+				kvStoreNodeName := nodeTypes.GetKeyNodeName(option.Config.ClusterName, k8sNode)
+				delete(kvStoreNodes, kvStoreNodeName)
+			}
+
+			for _, kvStoreNode := range kvStoreNodes {
+				if strings.HasPrefix(kvStoreNode.GetKeyName(), option.Config.ClusterName) {
+					ciliumNodeStore.DeleteLocalKey(context.TODO(), kvStoreNode)
+				}
+			}
+		}
+	}()
+
+	// FIXME: @aanm add CCNP and CNP node GC for non-kvstore mode
+	if kvstoreEnabled() && option.Config.SyncK8sNodes {
+		if option.Config.EnableCNPNodeStatusGC && option.Config.CNPNodeStatusGCInterval != 0 {
+			go runCNPNodeStatusGC("cnp-node-gc", false, ciliumNodeStore)
+		}
+
+		if option.Config.EnableCCNPNodeStatusGC && option.Config.CNPNodeStatusGCInterval != 0 {
+			go runCNPNodeStatusGC("ccnp-node-gc", true, ciliumNodeStore)
+		}
+	}
+
+	return nil
 }
 
 // runCNPNodeStatusGC runs the node status garbage collector for cilium network
