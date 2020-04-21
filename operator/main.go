@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"time"
 
 	operatorMetrics "github.com/cilium/cilium/operator/metrics"
 	"github.com/cilium/cilium/pkg/components"
@@ -186,6 +187,15 @@ func runOperator(cmd *cobra.Command) {
 			// be able to watch for K8s Node events which they will be used
 			// to create the remaining CiliumNodes.
 			<-k8sCiliumNodesCacheSynced
+
+			// We don't want CiliumNodes that don't have podCIDRs to be
+			// allocated with a podCIDR already being used by another node.
+			// For this reason we will call Resync after all CiliumNodes are
+			// synced with the operator to signalize the node manager, since it
+			// knows all podCIDRs that are currently set in the cluster, that
+			// it can allocate podCIDRs for the nodes that don't have a podCIDR
+			// set.
+			nm.Resync(context.Background(), time.Time{})
 
 			// Run this in a go routine because we will need to watch
 			// for nodes and if the user has also setup KVStore this would

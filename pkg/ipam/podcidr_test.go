@@ -166,6 +166,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_Create(c *C) {
 	type fields struct {
 		k8sReSyncController *controller.Manager
 		k8sReSync           *trigger.Trigger
+		canAllocateNodes    bool
 		v4ClusterCIDRs      []CIDRAllocator
 		v6ClusterCIDRs      []CIDRAllocator
 		nodes               map[string]*nodeCIDRs
@@ -188,6 +189,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_Create(c *C) {
 			testSetup: func() *fields {
 				reSyncCalls = 0
 				return &fields{
+					canAllocateNodes: true,
 					v4ClusterCIDRs: []CIDRAllocator{
 						&mockCIDRAllocator{
 							OnAllocateNext: func() (ipNet *net.IPNet, err error) {
@@ -246,6 +248,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_Create(c *C) {
 			testSetup: func() *fields {
 				reSyncCalls = 0
 				return &fields{
+					canAllocateNodes: true,
 					v4ClusterCIDRs: []CIDRAllocator{
 						&mockCIDRAllocator{
 							OnAllocateNext: func() (ipNet *net.IPNet, err error) {
@@ -299,6 +302,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_Create(c *C) {
 			want: true,
 			testSetup: func() *fields {
 				return &fields{
+					canAllocateNodes: true,
 					v4ClusterCIDRs: []CIDRAllocator{
 						&mockCIDRAllocator{},
 					},
@@ -337,6 +341,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_Create(c *C) {
 			testSetup: func() *fields {
 				reSyncCalls = 0
 				return &fields{
+					canAllocateNodes: true,
 					nodes: map[string]*nodeCIDRs{
 						"node-1": {
 							v4PodCIDRs: mustNewCIDRs("10.10.0.0/24"),
@@ -389,6 +394,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_Create(c *C) {
 			testSetup: func() *fields {
 				reSyncCalls = 0
 				return &fields{
+					canAllocateNodes: true,
 					v4ClusterCIDRs: []CIDRAllocator{
 						&mockCIDRAllocator{
 							OnIsFull: func() bool {
@@ -453,6 +459,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_Create(c *C) {
 		n := &NodesPodCIDRManager{
 			k8sReSyncController: tt.fields.k8sReSyncController,
 			k8sReSync:           tt.fields.k8sReSync,
+			canAllocatePodCIDRs: tt.fields.canAllocateNodes,
 			v4CIDRAllocators:    tt.fields.v4ClusterCIDRs,
 			v6CIDRAllocators:    tt.fields.v6ClusterCIDRs,
 			nodes:               tt.fields.nodes,
@@ -472,6 +479,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_Delete(c *C) {
 	type fields struct {
 		k8sReSyncController *controller.Manager
 		k8sReSync           *trigger.Trigger
+		canAllocateNodes    bool
 		v4ClusterCIDRs      []CIDRAllocator
 		v6ClusterCIDRs      []CIDRAllocator
 		nodes               map[string]*nodeCIDRs
@@ -492,6 +500,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_Delete(c *C) {
 			testSetup: func() *fields {
 				reSyncCalls = 0
 				return &fields{
+					canAllocateNodes: true,
 					v4ClusterCIDRs: []CIDRAllocator{
 						&mockCIDRAllocator{
 							OnRelease: func(cidr *net.IPNet) error {
@@ -535,6 +544,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_Delete(c *C) {
 			testSetup: func() *fields {
 				reSyncCalls = 0
 				return &fields{
+					canAllocateNodes: true,
 					ciliumNodesToK8s: map[string]*ciliumNodeK8sOp{},
 				}
 			},
@@ -553,6 +563,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_Delete(c *C) {
 		n := &NodesPodCIDRManager{
 			k8sReSyncController: tt.fields.k8sReSyncController,
 			k8sReSync:           tt.fields.k8sReSync,
+			canAllocatePodCIDRs: tt.fields.canAllocateNodes,
 			v4CIDRAllocators:    tt.fields.v4ClusterCIDRs,
 			v6CIDRAllocators:    tt.fields.v6ClusterCIDRs,
 			nodes:               tt.fields.nodes,
@@ -611,6 +622,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_Update(c *C) {
 	type fields struct {
 		k8sReSyncController *controller.Manager
 		k8sReSync           *trigger.Trigger
+		canAllocateNodes    bool
 		v4ClusterCIDRs      []CIDRAllocator
 		v6ClusterCIDRs      []CIDRAllocator
 		nodes               map[string]*nodeCIDRs
@@ -632,6 +644,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_Update(c *C) {
 			want: true,
 			testSetup: func() *fields {
 				return &fields{
+					canAllocateNodes: true,
 					v4ClusterCIDRs: []CIDRAllocator{
 						&mockCIDRAllocator{
 							OnAllocateNext: func() (ipNet *net.IPNet, err error) {
@@ -688,6 +701,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_Update(c *C) {
 			want: true,
 			testSetup: func() *fields {
 				return &fields{
+					canAllocateNodes: true,
 					v4ClusterCIDRs: []CIDRAllocator{
 						&mockCIDRAllocator{
 							OnAllocateNext: func() (ipNet *net.IPNet, err error) {
@@ -740,6 +754,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_Update(c *C) {
 			want: true,
 			testSetup: func() *fields {
 				return &fields{
+					canAllocateNodes: true,
 					v4ClusterCIDRs: []CIDRAllocator{
 						&mockCIDRAllocator{
 							OnAllocateNext: func() (ipNet *net.IPNet, err error) {
@@ -785,6 +800,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_Update(c *C) {
 			want: true,
 			testSetup: func() *fields {
 				return &fields{
+					canAllocateNodes: true,
 					nodes: map[string]*nodeCIDRs{
 						"node-1": {
 							v4PodCIDRs: mustNewCIDRs("10.10.0.0/24"),
@@ -837,6 +853,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_Update(c *C) {
 		n := &NodesPodCIDRManager{
 			k8sReSyncController: tt.fields.k8sReSyncController,
 			k8sReSync:           tt.fields.k8sReSync,
+			canAllocatePodCIDRs: tt.fields.canAllocateNodes,
 			v4CIDRAllocators:    tt.fields.v4ClusterCIDRs,
 			v6CIDRAllocators:    tt.fields.v6ClusterCIDRs,
 			nodes:               tt.fields.nodes,
@@ -858,9 +875,10 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_allocateIPNets(c *C) {
 	)
 
 	type fields struct {
-		v4ClusterCIDRs []CIDRAllocator
-		v6ClusterCIDRs []CIDRAllocator
-		nodes          map[string]*nodeCIDRs
+		canAllocatePodCIDRs bool
+		v4ClusterCIDRs      []CIDRAllocator
+		v6ClusterCIDRs      []CIDRAllocator
+		nodes               map[string]*nodeCIDRs
 	}
 	type args struct {
 		nodeName string
@@ -880,8 +898,9 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_allocateIPNets(c *C) {
 			name: "test-1 - should not allocate anything because the node had previously allocated CIDRs",
 			testSetup: func() *fields {
 				return &fields{
-					v4ClusterCIDRs: []CIDRAllocator{&mockCIDRAllocator{}},
-					v6ClusterCIDRs: []CIDRAllocator{&mockCIDRAllocator{}},
+					canAllocatePodCIDRs: true,
+					v4ClusterCIDRs:      []CIDRAllocator{&mockCIDRAllocator{}},
+					v6ClusterCIDRs:      []CIDRAllocator{&mockCIDRAllocator{}},
 					nodes: map[string]*nodeCIDRs{
 						"node-1": {
 							v4PodCIDRs: mustNewCIDRs("10.10.0.0/24"),
@@ -913,6 +932,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_allocateIPNets(c *C) {
 				onOccupyCallsv4, onOccupyCallsv6 = 0, 0
 				onIsAllocatedCallsv4, onIsAllocatedCallsv6 = 0, 0
 				return &fields{
+					canAllocatePodCIDRs: true,
 					v4ClusterCIDRs: []CIDRAllocator{
 						&mockCIDRAllocator{
 							OnOccupy: func(cidr *net.IPNet) error {
@@ -988,6 +1008,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_allocateIPNets(c *C) {
 				onOccupyCallsv4, onOccupyCallsv6 = 0, 0
 				onIsAllocatedCallsv4, onIsAllocatedCallsv6 = 0, 0
 				return &fields{
+					canAllocatePodCIDRs: true,
 					v4ClusterCIDRs: []CIDRAllocator{
 						&mockCIDRAllocator{
 							OnIsAllocated: func(cidr *net.IPNet) (bool, error) {
@@ -1050,6 +1071,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_allocateIPNets(c *C) {
 			name: "test-4 - changing CIDRs of a node is not valid",
 			testSetup: func() *fields {
 				return &fields{
+					canAllocatePodCIDRs: true,
 					v4ClusterCIDRs: []CIDRAllocator{
 						&mockCIDRAllocator{},
 					},
@@ -1085,6 +1107,7 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_allocateIPNets(c *C) {
 				" an allocator available for the CIDR family requested!",
 			testSetup: func() *fields {
 				return &fields{
+					canAllocatePodCIDRs: true,
 					nodes: map[string]*nodeCIDRs{
 						"node-1": {
 							v4PodCIDRs: mustNewCIDRs("10.10.1.0/24"),
@@ -1113,9 +1136,10 @@ func (s *IPAMSuite) TestNodesPodCIDRManager_allocateIPNets(c *C) {
 	for _, tt := range tests {
 		tt.fields = tt.testSetup()
 		n := &NodesPodCIDRManager{
-			v4CIDRAllocators: tt.fields.v4ClusterCIDRs,
-			v6CIDRAllocators: tt.fields.v6ClusterCIDRs,
-			nodes:            tt.fields.nodes,
+			canAllocatePodCIDRs: tt.fields.canAllocatePodCIDRs,
+			v4CIDRAllocators:    tt.fields.v4ClusterCIDRs,
+			v6CIDRAllocators:    tt.fields.v6ClusterCIDRs,
+			nodes:               tt.fields.nodes,
 		}
 		gotAllocated, err := n.allocateIPNets(tt.args.nodeName, tt.args.v4CIDR, tt.args.v6CIDR)
 		gotErr := err != nil
