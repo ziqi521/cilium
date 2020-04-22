@@ -163,7 +163,7 @@ func (e *Endpoint) RegenerateAfterRestore() error {
 	}
 	if buildSuccess := <-e.Regenerate(regenerationMetadata); !buildSuccess {
 		scopedLog.Warn("Failed while regenerating endpoint")
-		return fmt.Errorf("failed while regenerating endpoint")
+		return fmt.Errorf("Failed while regenerating endpoint")
 	}
 
 	// NOTE: unconditionalRLock is used here because it's used only for logging an already restored endpoint
