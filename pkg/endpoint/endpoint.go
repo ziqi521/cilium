@@ -1080,10 +1080,16 @@ func (e *Endpoint) SetNamedPorts(containerPorts []types.ContainerPort) error {
 			continue
 		}
 		name := strings.ToLower(cp.Name)
-		u8p, err := u8proto.ParseProtocol(cp.Protocol)
-		if err != nil {
-			log.WithError(err).WithField(logfields.Protocol, cp.Protocol).Warning("ContainerPort: invalid protocol")
-			continue
+		var u8p u8proto.U8proto
+		if cp.Protocol == "" {
+			u8p = u8proto.TCP
+		} else {
+			var err error
+			u8p, err = u8proto.ParseProtocol(cp.Protocol)
+			if err != nil {
+				log.WithError(err).WithField(logfields.Protocol, cp.Protocol).Warning("ContainerPort: invalid protocol")
+				continue
+			}
 		}
 		if cp.ContainerPort < 1 || cp.ContainerPort > 65535 {
 			log.WithField(logfields.Port, cp.ContainerPort).Warning("ContainerPort: Port number out of 16-bit range")
