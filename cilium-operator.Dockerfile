@@ -13,7 +13,7 @@ RUN apk --update add ca-certificates
 FROM scratch
 LABEL maintainer="maintainer@cilium.io"
 COPY --from=builder /go/src/github.com/cilium/cilium/operator/cilium-operator /usr/bin/cilium-operator
-COPY --from=builder /go/src/github.com/cilium/cilium/operator/cilium-operator-none /usr/bin/cilium-operator-none
+COPY --from=builder /go/src/github.com/cilium/cilium/operator/cilium-operator-generic /usr/bin/cilium-operator-generic
 COPY --from=builder /go/src/github.com/cilium/cilium/operator/cilium-operator-aws /usr/bin/cilium-operator-aws
 COPY --from=builder /go/src/github.com/cilium/cilium/operator/cilium-operator-azure /usr/bin/cilium-operator-azure
 

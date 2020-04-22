@@ -19,5 +19,6 @@ import (
 )
 
 var (
-	allocatorProviders = make(map[string]allocator.AllocatorProvider)
+	allocatorProviderAWS   allocator.AllocatorProvider
+	allocatorProviderAzure allocator.AllocatorProvider
 )

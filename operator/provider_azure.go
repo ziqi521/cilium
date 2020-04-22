@@ -22,5 +22,5 @@ import (
 )
 
 func init() {
-	allocatorProviders["azure"] = &allocatorAzure.AllocatorAzure{}
+	allocatorProviderAzure = &allocatorAzure.AllocatorAzure{}
 }

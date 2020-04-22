@@ -23,5 +23,5 @@ import (
 )
 
 func init() {
-	allocatorProviders["aws"] = &allocatorAWS.AllocatorAWS{}
+	allocatorProviderAWS = &allocatorAWS.AllocatorAWS{}
 }

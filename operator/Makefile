@@ -3,14 +3,14 @@
 
 include ../Makefile.defs
 
-TARGETS := cilium-operator cilium-operator-none cilium-operator-aws cilium-operator-azure
+TARGETS := cilium-operator cilium-operator-generic cilium-operator-aws cilium-operator-azure
 
 .PHONY: all $(TARGETS) clean install
 
 all: $(TARGETS)
 
 cilium-operator: OPERATOR_TAGS=operator_aws,operator_azure
-cilium-operator-none: OPERATOR_TAGS=""
+cilium-operator-generic: OPERATOR_TAGS=""
 cilium-operator-aws: OPERATOR_TAGS=operator_aws
 cilium-operator-azure: OPERATOR_TAGS=operator_azure
 
