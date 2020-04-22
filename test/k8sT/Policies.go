@@ -70,9 +70,9 @@ var _ = Describe("K8sPolicyTest", func() {
 		kubectl = helpers.CreateKubectl(helpers.K8s1VMName(), logger)
 
 		ciliumFilename = helpers.TimestampFilename("cilium.yaml")
-		demoPath = helpers.ManifestGet(kubectl.BasePath(), "demo.yaml")
-		l3Policy = helpers.ManifestGet(kubectl.BasePath(), "l3-l4-policy.yaml")
-		l7Policy = helpers.ManifestGet(kubectl.BasePath(), "l7-policy.yaml")
+		demoPath = helpers.ManifestGet(kubectl.BasePath(), "demo-named-port.yaml")
+		l3Policy = helpers.ManifestGet(kubectl.BasePath(), "l3-l4-policy-named-port.yaml")
+		l7Policy = helpers.ManifestGet(kubectl.BasePath(), "l7-policy-named-port.yaml")
 		l7PolicyKafka = helpers.ManifestGet(kubectl.BasePath(), "l7-policy-kafka.yaml")
 		l7PolicyTLS = helpers.ManifestGet(kubectl.BasePath(), "l7-policy-TLS.yaml")
 		TLSCaCerts = helpers.ManifestGet(kubectl.BasePath(), "testCA.crt")
@@ -246,7 +246,7 @@ var _ = Describe("K8sPolicyTest", func() {
 			}
 
 			trace := kubectl.CiliumExecMustSucceed(context.TODO(), ciliumPod, fmt.Sprintf(
-				"cilium policy trace --src-k8s-pod %s:%s --dst-k8s-pod %s:%s --dport 80/TCP",
+				"cilium policy trace --src-k8s-pod %s:%s --dst-k8s-pod %s:%s --dport http-80/TCP",
 				namespaceForTest, appPods[helpers.App2], namespaceForTest, appPods[helpers.App1]))
 			trace.ExpectContains("Final verdict: ALLOWED", "Policy trace output mismatch")
 
@@ -1289,8 +1289,8 @@ EOF`, k, v)
 			})
 			res.ExpectSuccess("Unable to render cnp-second-namespace chart")
 
-			demoPath = helpers.ManifestGet(kubectl.BasePath(), "demo.yaml")
-			l3L4Policy = helpers.ManifestGet(kubectl.BasePath(), "l3-l4-policy.yaml")
+			demoPath = helpers.ManifestGet(kubectl.BasePath(), "demo-named-port.yaml")
+			l3L4Policy = helpers.ManifestGet(kubectl.BasePath(), "l3-l4-policy-named-port.yaml")
 			netpolNsSelector = fmt.Sprintf("%s -n %s", helpers.ManifestGet(kubectl.BasePath(), "netpol-namespace-selector.yaml"), secondNS)
 			l3l4PolicySecondNS = fmt.Sprintf("%s -n %s", l3L4Policy, secondNS)
 			demoManifest = fmt.Sprintf("%s -n %s", demoPath, secondNS)
@@ -1495,7 +1495,7 @@ EOF`, k, v)
 		BeforeAll(func() {
 			firstNS = helpers.GenerateNamespaceForTest("1")
 			secondNS = helpers.GenerateNamespaceForTest("2")
-			demoPath = helpers.ManifestGet(kubectl.BasePath(), "demo.yaml")
+			demoPath = helpers.ManifestGet(kubectl.BasePath(), "demo-named-port.yaml")
 			egressDenyAllPolicy = helpers.ManifestGet(kubectl.BasePath(), "ccnp-default-deny-egress.yaml")
 			ingressDenyAllPolicy = helpers.ManifestGet(kubectl.BasePath(), "ccnp-default-deny-ingress.yaml")
 			allowIngressPolicy = helpers.ManifestGet(kubectl.BasePath(), "ccnp-update-allow-ingress.yaml")
