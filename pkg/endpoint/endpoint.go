@@ -53,11 +53,9 @@ import (
 	"github.com/cilium/cilium/pkg/monitor/notifications"
 	"github.com/cilium/cilium/pkg/option"
 	"github.com/cilium/cilium/pkg/policy"
-	"github.com/cilium/cilium/pkg/policy/api"
 	"github.com/cilium/cilium/pkg/policy/trafficdirection"
 	"github.com/cilium/cilium/pkg/proxy/accesslog"
 	"github.com/cilium/cilium/pkg/trigger"
-	"github.com/cilium/cilium/pkg/u8proto"
 
 	"github.com/sirupsen/logrus"
 
@@ -1073,32 +1071,16 @@ func (e *Endpoint) SetNamedPorts(containerPorts []types.ContainerPort) error {
 	k8sPorts := make(policy.NamedPortsMap, len(containerPorts))
 	for _, cp := range containerPorts {
 		if cp.Name == "" {
-			continue // skip unnamed ports
+			continue // silently skip unnamed ports
 		}
-		if !api.IsNamedPort(cp.Name) {
-			log.WithField(logfields.PortName, cp.Name).Warning("ContainerPort: Invalid port name, not using as a named port")
+		err := k8sPorts.AddPort(cp.Name, int(cp.ContainerPort), cp.Protocol)
+		if err != nil {
+			e.getLogger().WithError(err).Warning("Adding named port failed")
 			continue
 		}
-		name := strings.ToLower(cp.Name)
-		var u8p u8proto.U8proto
-		if cp.Protocol == "" {
-			u8p = u8proto.TCP
-		} else {
-			var err error
-			u8p, err = u8proto.ParseProtocol(cp.Protocol)
-			if err != nil {
-				log.WithError(err).WithField(logfields.Protocol, cp.Protocol).Warning("ContainerPort: invalid protocol")
-				continue
-			}
-		}
-		if cp.ContainerPort < 1 || cp.ContainerPort > 65535 {
-			log.WithField(logfields.Port, cp.ContainerPort).Warning("ContainerPort: Port number out of 16-bit range")
-			continue
-		}
-		k8sPorts[name] = policy.NamedPort{
-			Proto: uint8(u8p), // 0 for any
-			Port:  uint16(cp.ContainerPort),
-		}
+	}
+	if len(k8sPorts) == 0 {
+		k8sPorts = policy.NamedPortsMap{} // nil map with no storage
 	}
 	e.mutex.Lock()
 	e.k8sPorts = k8sPorts
