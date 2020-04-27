@@ -97,9 +97,9 @@ requirements have been met:
 
 #. All commits are signed off. See the section :ref:`dev_coo`.
 
-#. (optional) Pick the appropriate milestone for which this PR is being targeted
-   to, e.g. ``1.1``, ``1.2``. This is in particular important in the time frame
-   between the feature freeze and final release date.
+#. (optional) Pick the appropriate milestone for which this PR is being
+   targeted, e.g. ``1.1``, ``1.2``. This is in particular important in the time
+   frame between the feature freeze and final release date.
 
 #. If you have permissions to do so, pick the right release-note label. These
    labels will be used to generate the release notes which will primarily be
@@ -239,12 +239,12 @@ Pull requests review process for committers
 
 #. Belonging to a team does not mean that a committer should know every single
    line of code the team is maintaining. For this reason it is recommended
-   that, once a review has been given and if the committer feels another pair
-   of eyes is needed, the committer should re-request a review from the
-   appropriate team. In the example bellow, the committer belonging to the CI
-   team is re-requesting a review for other team members to review the PR. This
-   allows other team members belonging to the CI team to see the PR as part of
-   the PRs that require review in the `filter provided above <https://github.com/cilium/cilium/pulls?q=is%3Apr+is%3Aopen+draft%3Afalse+review-requested%3A%40me+sort%3Aupdated-asc>`_
+   that, once you have reviewed a PR, if you feel that another pair of eyes is
+   needed, you should re-request a review from the appropriate team. In the
+   example below, the committer belonging to the CI team is re-requesting a
+   review for other team members to review the PR. This allows other team
+   members belonging to the CI team to see the PR as part of the PRs that
+   require review in the `filter provided above <https://github.com/cilium/cilium/pulls?q=is%3Apr+is%3Aopen+draft%3Afalse+review-requested%3A%40me+sort%3Aupdated-asc>`_
 
    .. image:: ../../images/re-request-review.png
       :align: center
@@ -386,7 +386,7 @@ Even if the next release is not imminently planned, it is still important to
 perform backports to keep the process smooth and to catch potential regressions
 in stable branches as soon as possible. If backports are delayed, this can also
 delay releases which is important to avoid especially if there are
-security-sensitive bug fixes that requires an immediate release.
+security-sensitive bug fixes that require an immediate release.
 
 In addition, when a backport PR is open, the person opening it is responsible to
 drive it to completion, even if it stretches after the assigned week of
