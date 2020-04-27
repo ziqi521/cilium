@@ -101,25 +101,27 @@ requirements have been met:
    to, e.g. ``1.1``, ``1.2``. This is in particular important in the time frame
    between the feature freeze and final release date.
 
-#. If you have permissions to do it so, pick the right release-note label.
+#. If you have permissions to do so, pick the right release-note label. These
+   labels will be used to generate the release notes which will primarily be
+   read by users.
 
-   +--------------------------+--------------------------------------------------------------------------------------------+
-   | Labels                   | When to set                                                                                |
-   +==========================+============================================================================================+
-   | ``release-note/bug``     | This is a non-trivial bugfix and is a user facing bug                                      |
-   +--------------------------+--------------------------------------------------------------------------------------------+
-   | ``release-note/major``   | This is a major feature addition, e.g. Add MongoDB support                                 |
-   +--------------------------+--------------------------------------------------------------------------------------------+
-   | ``release-note/minor``   | This is a minor feature addition, e.g. Add support for a Kubernetes version                |
-   +--------------------------+--------------------------------------------------------------------------------------------+
-   | ``release-note/misc``    | This is a misc change, e.g. Refactor endpoint package, a bug fix of a non-released feature |
-   +--------------------------+--------------------------------------------------------------------------------------------+
+   +-----------------------------------+--------------------------------------------------------------------------------------------------------+
+   | Labels                            | When to set                                                                                            |
+   +===================================+========================================================================================================+
+   | ``release-note/bug``              | This is a non-trivial bugfix and is a user facing bug                                                  |
+   +-----------------------------------+--------------------------------------------------------------------------------------------------------+
+   | ``release-note/major``            | This is a major feature addition, e.g. Add MongoDB support                                             |
+   +-----------------------------------+--------------------------------------------------------------------------------------------------------+
+   | ``release-note/minor``            | This is a minor feature addition, e.g. Add support for a Kubernetes version                            |
+   +-----------------------------------+--------------------------------------------------------------------------------------------------------+
+   | ``release-note/misc``             | This is a not user facing change , e.g. Refactor endpoint package, a bug fix of a non-released feature |
+   +-----------------------------------+--------------------------------------------------------------------------------------------------------+
 
 #. Verify the release note text. If not explicitly changed, the title of the PR
    will be used for the release notes. If you want to change this, you can add
    a special section to the description of the PR.
    These release notes are primarily going to be read by users so it is
-   important that release notes for bugs, major and minor features does not
+   important that release notes for bugs, major and minor features do not
    contain internal details of Cilium functionality which sometimes are
    irrelevant for users.
 
@@ -152,7 +154,7 @@ requirements have been met:
    +------------------------------+---------------------------------------------------------------------------+
    | ``kind/enhancement``         | This enhances existing functionality in Cilium                            |
    +------------------------------+---------------------------------------------------------------------------+
-   | ``kind/feature``             | This is an feature                                                        |
+   | ``kind/feature``             | This is a feature                                                         |
    +------------------------------+---------------------------------------------------------------------------+
    | ``priority/release-blocker`` | This PR should block the current release                                  |
    +------------------------------+---------------------------------------------------------------------------+
@@ -171,16 +173,16 @@ requirements have been met:
       a comment and a core team member will add the labels for you. Most
       reviewers will do this automatically without prior request.
 
-#. GitHub provides the ability to create a Pull Request in "draft" mode.
-   On the "New Pull Request" page, below the pull request description box there
-   is a button for creating the pull request. Click the arrow and choose
-   "Create draft pull request". If your PR is still a work in progress, please
-   select this mode. You will still be able to run the CI against it. Once the
-   PR is ready for review you can click in "Ready for review" button at the
-   bottom of the page" and reviewers will start reviewing. When you are actively
-   changing your PR, set it back to draft PR mode to signal that reviewers do
-   not need to spend time reviewing the PR right now. When it is ready for
-   review again, mark it ready for review again.
+#. Open a draft pull request. GitHub provides the ability to create a Pull
+   Request in "draft" mode. On the "New Pull Request" page, below the pull
+   request description box there is a button for creating the pull request.
+   Click the arrow and choose "Create draft pull request". If your PR is still a
+   work in progress, please select this mode. You will still be able to run the
+   CI against it. Once the PR is ready for review you can click in "Ready for
+   review" button at the bottom of the page" and reviewers will start reviewing.
+   When you are actively changing your PR, set it back to draft PR mode to
+   signal that reviewers do not need to spend time reviewing the PR right now.
+   When it is ready for review again, mark it ready for review again.
 
 .. image:: https://i1.wp.com/user-images.githubusercontent.com/3477155/52671177-5d0e0100-2ee8-11e9-8645-bdd923b7d93b.gif
     :align: center
@@ -225,25 +227,24 @@ Pull requests review process for committers
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 #. Every committer in the `committers team <https://github.com/orgs/cilium/teams/committers/members>`_
-   belongs to at least to `one or more other teams in the Cilium organization <https://github.com/orgs/cilium/teams/team/teams>`_
-   if you would like to belong, or be removed from any team, please contact any
+   belongs to `one or more other teams in the Cilium organization <https://github.com/orgs/cilium/teams/team/teams>`_
+   if you would like to be added or removed from any team, please contact any
    of the `maintainers <https://github.com/orgs/cilium/teams/maintainers/members>`_.
 
-#. Once a PR is open, the ``CODEOWNERS`` file will automatically pick which `teams <https://github.com/orgs/cilium/teams/team/teams>`_
-   should review the PR. Each committer can see which PR they were requested to
-   review by filtering which PRs it has been requested reviews for. A good
-   filter is provided in this `link <https://github.com/cilium/cilium/pulls?q=is%3Apr+is%3Aopen+draft%3Afalse+review-requested%3A%40me+sort%3Aupdated-asc>`_
+#. Once a PR is open, GitHub will automatically pick which `teams <https://github.com/orgs/cilium/teams/team/teams>`_
+   should review the PR using the ``CODEOWNERS`` file. Each committer can see
+   PRs they need to review by filtering PRs they has been requested reviews for.
+   A good filter is provided in this `link <https://github.com/cilium/cilium/pulls?q=is%3Apr+is%3Aopen+draft%3Afalse+review-requested%3A%40me+sort%3Aupdated-asc>`_
    so make sure to bookmark it.
 
 #. Belonging to a team does not mean that a committer should know every single
-   line of code the team is maintaining, for this reason it is recommended
-   that, once a review has been given and if the committer does feel that it
-   would be better one other committer from his or her team would also review
-   the PR, the committer re-requests a review for the team that should review
-   the PR. In the example below, the committer belonging to the CI team is
-   re-requesting a review for other team members to review the PR. This allows
-   other team member belonging to the CI team to see the PR as part of the PRs
-   that require review in the `filter provided above <https://github.com/cilium/cilium/pulls?q=is%3Apr+is%3Aopen+draft%3Afalse+review-requested%3A%40me+sort%3Aupdated-asc>`_
+   line of code the team is maintaining. For this reason it is recommended
+   that, once a review has been given and if the committer feels another pair
+   of eyes is needed, the committer should re-request a review from the
+   appropriate team. In the example bellow, the committer belonging to the CI
+   team is re-requesting a review for other team members to review the PR. This
+   allows other team members belonging to the CI team to see the PR as part of
+   the PRs that require review in the `filter provided above <https://github.com/cilium/cilium/pulls?q=is%3Apr+is%3Aopen+draft%3Afalse+review-requested%3A%40me+sort%3Aupdated-asc>`_
 
    .. image:: ../../images/re-request-review.png
       :align: center
@@ -284,7 +285,7 @@ steps 1 to 2 times per day. Works best if done first thing in the working day.
 
 #. If this PR was opened by a non-committer (e.g. external contributor) please
    assign yourself to that PR and make sure to keep track the PR gets reviewed
-   and merged.
+   and merged. This may extend beyond your assigned week for Janitor duty.
 
 #. Review overall correctness of the PR according to the rules specified in the
    section :ref:`submit_pr`.
@@ -320,19 +321,19 @@ steps 1 to 2 times per day. Works best if done first thing in the working day.
    note suitability. Put yourself into the perspective of a future release
    notes reader with lack of context and ensure the title is precise but brief.
 
-   +-----------------------------------+--------------------------------------------------------------------------------------------+
-   | Labels                            | When to set                                                                                |
-   +===================================+============================================================================================+
-   | ``dont-merge/needs-release-note`` | Do NOT merge PR, needs a release note                                                      |
-   +-----------------------------------+--------------------------------------------------------------------------------------------+
-   | ``release-note/bug``              | This is a non-trivial bugfix and is a user facing bug                                      |
-   +-----------------------------------+--------------------------------------------------------------------------------------------+
-   | ``release-note/major``            | This is a major feature addition, e.g. Add MongoDB support                                 |
-   +-----------------------------------+--------------------------------------------------------------------------------------------+
-   | ``release-note/minor``            | This is a minor feature addition, e.g. Add support for a Kubernetes version                |
-   +-----------------------------------+--------------------------------------------------------------------------------------------+
-   | ``release-note/misc``             | This is a misc change, e.g. Refactor endpoint package, a bug fix of a non-released feature |
-   +-----------------------------------+--------------------------------------------------------------------------------------------+
+   +-----------------------------------+--------------------------------------------------------------------------------------------------------+
+   | Labels                            | When to set                                                                                            |
+   +===================================+========================================================================================================+
+   | ``dont-merge/needs-release-note`` | Do NOT merge PR, needs a release note                                                                  |
+   +-----------------------------------+--------------------------------------------------------------------------------------------------------+
+   | ``release-note/bug``              | This is a non-trivial bugfix and is a user facing bug                                                  |
+   +-----------------------------------+--------------------------------------------------------------------------------------------------------+
+   | ``release-note/major``            | This is a major feature addition, e.g. Add MongoDB support                                             |
+   +-----------------------------------+--------------------------------------------------------------------------------------------------------+
+   | ``release-note/minor``            | This is a minor feature addition, e.g. Add support for a Kubernetes version                            |
+   +-----------------------------------+--------------------------------------------------------------------------------------------------------+
+   | ``release-note/misc``             | This is a not user facing change , e.g. Refactor endpoint package, a bug fix of a non-released feature |
+   +-----------------------------------+--------------------------------------------------------------------------------------------------------+
 
 #. Check for upgrade compatibility impact and if in doubt, set the label
    ``upgrade-impact`` and discuss in the Slack channel or in the weekly meeting.
@@ -379,7 +380,18 @@ Backporting PR for Backport team
 --------------------------------
 
 Dedicated expectation time for each member of Backport team: 60 minutes per
-week depending on release needs to be performed at the moment.
+week depending on releases that need to be performed at the moment.
+
+Even if the next release is not imminently planned, it is still important to
+perform backports to keep the process smooth and to catch potential regressions
+in stable branches as soon as possible. If backports are delayed, this can also
+delay releases which is important to avoid especially if there are
+security-sensitive bug fixes that requires an immediate release.
+
+In addition, when a backport PR is open, the person opening it is responsible to
+drive it to completion, even if it stretches after the assigned week of
+backporting hat. If this is not feasible (e.g. PTO), you are responsible to
+initiate handover of the PR to the next week's backporters.
 
 Follow the :ref:`backport_process` guide to know how to perform this task.
 

@@ -49,11 +49,8 @@ Grafana
 Gunawardena
 Holzheu
 Huapeng
-hubble
-hubble-relay
 Hypercalls
 IP
-ipam
 IPsec
 IPv
 Integrations
@@ -179,6 +176,7 @@ backend
 backends
 backport
 backported
+backporters
 backporting
 backports
 balancer
@@ -216,10 +214,10 @@ cni
 cnp
 codebase
 conf
-contrib
 config
 conntrack
 containerd
+contrib
 coord
 coredns
 cpumap
@@ -316,6 +314,7 @@ hostport
 hq
 https
 hubble
+hubble-relay
 hugepages
 hypervisor
 hypervisors
@@ -331,6 +330,7 @@ inodes
 integrations
 io
 ip
+ipam
 ipcache
 iproute
 ipsec
@@ -447,8 +447,8 @@ observability
 onData
 onwards
 opcodes
-openapi
 openSUSE
+openapi
 openssl
 orchestrator
 pahole
