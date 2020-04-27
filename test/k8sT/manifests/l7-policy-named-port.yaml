@@ -2,7 +2,7 @@ apiVersion: "cilium.io/v2"
 kind: CiliumNetworkPolicy
 description: "L7 policy with a named L4 port for getting started using Kubernetes guide"
 metadata:
-  name: "l7-policy-with-named-port"
+  name: "l7-policy"
 spec:
   endpointSelector:
     matchLabels:
