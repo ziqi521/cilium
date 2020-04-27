@@ -6,6 +6,54 @@ kind: ServiceAccount
 metadata:
   name: cilium
 ---
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: log-gatherer-psp
+spec:
+  allowPrivilegeEscalation: false
+  allowedCapabilities:
+  - NET_ADMIN
+  - SYS_MODULE
+  - SYS_ADMIN
+  fsGroup:
+    rule: RunAsAny
+  hostNetwork: true
+  privileged: true
+  runAsUser:
+    rule: RunAsAny
+  seLinux:
+    rule: RunAsAny
+  supplementalGroups:
+    rule: RunAsAny
+  volumes:
+  - '*'
+---
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: log-gatherer-psp
+rules:
+- apiGroups: ['policy']
+  resources: ['podsecuritypolicies']
+  verbs:     ['use']
+  resourceNames:
+  - log-gatherer-psp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: log-gatherer-psp
+roleRef:
+  kind: ClusterRole
+  name: log-gatherer-psp
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: ServiceAccount
+  name: cilium
+  namespace: kube-system
+---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
