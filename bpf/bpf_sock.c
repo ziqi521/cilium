@@ -32,7 +32,7 @@ static __always_inline __maybe_unused bool is_v6_loopback(union v6addr *daddr)
 	return ipv6_addrcmp(&loopback, daddr) == 0;
 }
 
-static __always_inline __maybe_unused bool is_v4_in_v6(union v6addr *daddr)
+static __always_inline __maybe_unused bool is_v4_in_v6(const union v6addr *daddr)
 {
 	/* Check for ::FFFF:<IPv4 address>. */
 	union v6addr dprobe  = {
@@ -57,14 +57,14 @@ static __always_inline __maybe_unused void build_v4_in_v6(union v6addr *daddr,
 
 /* Hack due to missing narrow ctx access. */
 static __always_inline __maybe_unused __be16
-ctx_dst_port(struct bpf_sock_addr *ctx)
+ctx_dst_port(const struct bpf_sock_addr *ctx)
 {
 	volatile __u32 dport = ctx->user_port;
 	return (__be16)dport;
 }
 
 static __always_inline __maybe_unused __be16
-ctx_src_port(struct bpf_sock *ctx)
+ctx_src_port(const struct bpf_sock *ctx)
 {
 	volatile __u32 sport = ctx->src_port;
 	return (__be16)bpf_htons(sport);
@@ -145,9 +145,9 @@ struct bpf_elf_map __section_maps LB4_REVERSE_NAT_SK_MAP = {
 };
 
 static __always_inline int sock4_update_revnat(struct bpf_sock_addr *ctx,
-					       struct lb4_backend *backend,
-					       struct lb4_key *lkey,
-					       struct lb4_service *slave_svc)
+					       const struct lb4_backend *backend,
+					       const struct lb4_key *lkey,
+					       const struct lb4_service *slave_svc)
 {
 	struct ipv4_revnat_tuple rkey = {};
 	struct ipv4_revnat_entry rval = {};
@@ -418,9 +418,9 @@ struct bpf_elf_map __section_maps LB6_REVERSE_NAT_SK_MAP = {
 };
 
 static __always_inline int sock6_update_revnat(struct bpf_sock_addr *ctx,
-					       struct lb6_backend *backend,
-					       struct lb6_key *lkey,
-					       struct lb6_service *slave_svc)
+					       const struct lb6_backend *backend,
+					       const struct lb6_key *lkey,
+					       const struct lb6_service *slave_svc)
 {
 	struct ipv6_revnat_tuple rkey = {};
 	struct ipv6_revnat_entry rval = {};
@@ -448,7 +448,7 @@ int sock6_update_revnat(struct bpf_sock_addr *ctx __maybe_unused,
 #endif /* ENABLE_HOST_SERVICES_UDP */
 #endif /* ENABLE_IPV6 */
 
-static __always_inline void ctx_get_v6_address(struct bpf_sock_addr *ctx,
+static __always_inline void ctx_get_v6_address(const struct bpf_sock_addr *ctx,
 					       union v6addr *addr)
 {
 	addr->p1 = ctx->user_ip6[0];
@@ -458,7 +458,7 @@ static __always_inline void ctx_get_v6_address(struct bpf_sock_addr *ctx,
 }
 
 #ifdef ENABLE_NODEPORT
-static __always_inline void ctx_get_v6_src_address(struct bpf_sock *ctx,
+static __always_inline void ctx_get_v6_src_address(const struct bpf_sock *ctx,
 						   union v6addr *addr)
 {
 	addr->p1 = ctx->src_ip6[0];
@@ -469,7 +469,7 @@ static __always_inline void ctx_get_v6_src_address(struct bpf_sock *ctx,
 #endif /* ENABLE_NODEPORT */
 
 static __always_inline void ctx_set_v6_address(struct bpf_sock_addr *ctx,
-					       union v6addr *addr)
+					       const union v6addr *addr)
 {
 	ctx->user_ip6[0] = addr->p1;
 	ctx->user_ip6[1] = addr->p2;

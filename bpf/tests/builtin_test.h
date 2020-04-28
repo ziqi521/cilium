@@ -3,7 +3,7 @@
 
 #include "lib/common.h"
 
-static void __fill_rnd(void *buff, __u32 len)
+static void __fill_rnd(const void *buff, __u32 len)
 {
 	__u8 *dest = buff;
 	__u32 i;
