@@ -14,7 +14,7 @@ Clone and Provision Environment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 #. Make sure you have a `GitHub account <https://github.com/join>`_
-#. Clone the cilium repository into your GOPATH.
+#. Clone the cilium repository into your ``GOPATH``.
 
    ::
 
@@ -98,7 +98,7 @@ requirements have been met:
 #. All commits are signed off. See the section :ref:`dev_coo`.
 
 #. (optional) Pick the appropriate milestone for which this PR is being
-   targeted, e.g. ``1.1``, ``1.2``. This is in particular important in the time
+   targeted, e.g. ``1.6``, ``1.7``. This is in particular important in the time
    frame between the feature freeze and final release date.
 
 #. If you have permissions to do so, pick the right release-note label. These
@@ -115,6 +115,8 @@ requirements have been met:
    | ``release-note/minor``            | This is a minor feature addition, e.g. Add support for a Kubernetes version                            |
    +-----------------------------------+--------------------------------------------------------------------------------------------------------+
    | ``release-note/misc``             | This is a not user facing change , e.g. Refactor endpoint package, a bug fix of a non-released feature |
+   +-----------------------------------+--------------------------------------------------------------------------------------------------------+
+   | ``release-note/ci``               | This is a CI feature of bug fix.                                                                       |
    +-----------------------------------+--------------------------------------------------------------------------------------------------------+
 
 #. Verify the release note text. If not explicitly changed, the title of the PR
@@ -182,7 +184,7 @@ requirements have been met:
    review" button at the bottom of the page" and reviewers will start reviewing.
    When you are actively changing your PR, set it back to draft PR mode to
    signal that reviewers do not need to spend time reviewing the PR right now.
-   When it is ready for review again, mark it ready for review again.
+   When it is ready for review again, mark it as such.
 
 .. image:: https://i1.wp.com/user-images.githubusercontent.com/3477155/52671177-5d0e0100-2ee8-11e9-8645-bdd923b7d93b.gif
     :align: center
@@ -218,10 +220,32 @@ Getting a pull request merged
    merged by one of the repository owners. In case this does not happen, ping
    us on Slack.
 
-#. If reviewers have requested for changes and once those changes are done,
+#. If reviewers have requested changes and once those changes are done,
    re-request a review for the reviewers that have requested changes. Otherwise,
    those reviewers will not be notified and your PR will not receive any
-   reviews.
+   reviews. If the PR is considerably large (e.g. with more than 200 lines
+   changed and/or more than 6 commits) create new commit for each review. This
+   will make the review process smoother as GitHub has limitations that
+   prevents reviewers from only seeing the new changes added since the last time
+   they have reviewed a PR. Once all reviews are addressed those commits should
+   be squashed against the commit that introduced those changes. This can be
+   easily accomplished by the usage of ``git rebase -i origin/master`` and in
+   that windows, move these new commits below the commit that introduced the
+   changes and replace the work ``pick`` with ``fixup``. In the following
+   example, commit ``d2cb02265`` will be meld into ``9c62e62d8`` and commit
+   ``146829b59`` will be meld into ``9400fed20``.
+
+       ::
+
+           pick 9c62e62d8 docs: updating contribution guide process
+           fixup d2cb02265 joe + paul + chris changes
+           pick 9400fed20 docs: fixing typo
+           fixup 146829b59 Quetin and Maciej reviews
+
+   Once this is done you can perform
+   ``git push origin <branch-name> --force`` to push your changes
+   into your PR and request for your PR to be merged.
+
 
 Pull requests review process for committers
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -250,9 +274,9 @@ Pull requests review process for committers
       :align: center
       :scale: 50%
 
-#. When all review objectives for all ``CODEOWNERS`` are met and all required CI
-   tests have passed, you may set the ``ready-to-merge`` label to indicate that
-   all criteria have been met.
+#. When all review objectives for all ``CODEOWNERS`` are met, all required CI
+   tests have passed and a proper release label as been set, you may set the
+   ``ready-to-merge`` label to indicate that all criteria have been met.
 
    +--------------------------+---------------------------+
    | Labels                   | When to set               |
@@ -267,6 +291,10 @@ Some members of the committers team will have rotational duties that change
 every week. The following steps describe how to perform those duties. Please
 submit changes to these steps if you have found a better way to perform each
 duty.
+
+* `People on Janitor hat this week <https://github.com/orgs/cilium/teams/janitors/members>`_
+* `People on Triage hat this week <https://github.com/orgs/cilium/teams/triage/members>`_
+* `People on Backport hat this week <https://github.com/orgs/cilium/teams/backporter/members>`_
 
 Pull request review process for Janitors team
 ---------------------------------------------
@@ -334,6 +362,8 @@ steps 1 to 2 times per day. Works best if done first thing in the working day.
    +-----------------------------------+--------------------------------------------------------------------------------------------------------+
    | ``release-note/misc``             | This is a not user facing change , e.g. Refactor endpoint package, a bug fix of a non-released feature |
    +-----------------------------------+--------------------------------------------------------------------------------------------------------+
+   | ``release-note/ci``               | This is a CI feature of bug fix.                                                                       |
+   +-----------------------------------+--------------------------------------------------------------------------------------------------------+
 
 #. Check for upgrade compatibility impact and if in doubt, set the label
    ``upgrade-impact`` and discuss in the Slack channel or in the weekly meeting.
@@ -353,7 +383,7 @@ steps 1 to 2 times per day. Works best if done first thing in the working day.
 Triage issues for Triage team
 -----------------------------
 
-Dedicated expectation time for each member of Triage team: 15 / 30 minutes per
+Dedicated expectation time for each member of Triage team: 15/30 minutes per
 day. Works best if done first thing in the working day.
 
 #. Committers belonging to the `Triage team <https://github.com/orgs/cilium/teams/triage>`_
