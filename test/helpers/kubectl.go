@@ -3205,11 +3205,6 @@ func (kub *Kubectl) ciliumServicePreFlightCheck() error {
 				k8sSvc.Spec.ClusterIP == v1.ClusterIPNone {
 				continue
 			}
-			// TODO(brb) check NodePort and LoadBalancer services
-			if k8sSvc.Spec.Type == v1.ServiceTypeNodePort ||
-				k8sSvc.Spec.Type == v1.ServiceTypeLoadBalancer {
-				continue
-			}
 			if _, ok := k8sServicesFound[key]; !ok {
 				notFoundServices = append(notFoundServices, key)
 			}
@@ -3340,43 +3335,57 @@ func serviceKey(s v1.Service) string {
 	return s.Namespace + "/" + s.Name
 }
 
+func getSvcPort(svcPorts []v1.ServicePort, port uint16) *v1.ServicePort {
+	return nil
+}
+
 // validateCiliumSvc checks if given Cilium service has corresponding k8s services and endpoints in given slices
 func validateCiliumSvc(cSvc models.Service, k8sSvcs []v1.Service, k8sEps []v1.Endpoints, k8sServicesFound map[string]bool) error {
-	var k8sService *v1.Service
-
-	// TODO(brb) validate NodePort, LoadBalancer and HostPort services
+	typ := models.ServiceSpecFlagsTypeClusterIP
 	if cSvc.Status.Realized.Flags != nil {
-		switch cSvc.Status.Realized.Flags.Type {
-		case models.ServiceSpecFlagsTypeNodePort,
-			models.ServiceSpecFlagsTypeHostPort,
-			models.ServiceSpecFlagsTypeExternalIPs:
-			return nil
-		case "LoadBalancer":
-			return nil
-		}
+		typ = cSvc.Status.Realized.Flags.Type
 	}
 
-	for _, k8sSvc := range k8sSvcs {
-		if k8sSvc.Spec.ClusterIP == cSvc.Status.Realized.FrontendAddress.IP {
-			k8sService = &k8sSvc
-			break
-		}
-	}
-	if k8sService == nil {
-		return fmt.Errorf("Could not find Cilium service with ip %s in k8s", cSvc.Spec.FrontendAddress.IP)
-	}
-
+	var k8sService *v1.Service
 	var k8sServicePort *v1.ServicePort
-	for _, k8sPort := range k8sService.Spec.Ports {
-		if k8sPort.Port == int32(cSvc.Status.Realized.FrontendAddress.Port) {
-			k8sServicePort = &k8sPort
-			k8sServicesFound[serviceKey(*k8sService)] = true
-			break
+K8S_SVCS:
+	for _, k8sSvc := range k8sSvcs {
+		switch typ {
+		case models.ServiceSpecFlagsTypeNodePort:
+			for _, svcPort := range k8sService.Spec.Ports {
+				if svcPort.NodePort == int32(cSvc.Status.Realized.FrontendAddress.Port) {
+					k8sService = &k8sSvc
+					k8sServicePort = &svcPort
+					break K8S_SVCS
+				}
+			}
+		case "LoadBalancer":
+			if k8sSvc.Spec.LoadBalancerIP == cSvc.Status.Realized.FrontendAddress.IP {
+				k8sService = &k8sSvc
+				break K8S_SVCS
+			}
+		default: // ClusterIP
+			if k8sSvc.Spec.ClusterIP == cSvc.Status.Realized.FrontendAddress.IP {
+				k8sService = &k8sSvc
+				break K8S_SVCS
+			}
 		}
 	}
+
 	if k8sServicePort == nil {
-		return fmt.Errorf("Could not find Cilium service with address %s:%d in k8s", cSvc.Spec.FrontendAddress.IP, cSvc.Spec.FrontendAddress.Port)
+		for _, svcPort := range k8sService.Spec.Ports {
+			if svcPort.Port == int32(cSvc.Status.Realized.FrontendAddress.Port) {
+				k8sServicePort = &svcPort
+				break
+			}
+		}
 	}
+	if k8sService == nil || k8sServicePort == nil {
+		return fmt.Errorf("Could not find Cilium service of type %v with address %s:%d in k8s",
+			typ, cSvc.Spec.FrontendAddress.IP, cSvc.Spec.FrontendAddress.Port)
+	}
+
+	k8sServicesFound[serviceKey(*k8sService)] = true
 
 	for _, backAddr := range cSvc.Status.Realized.BackendAddresses {
 		foundEp := false
