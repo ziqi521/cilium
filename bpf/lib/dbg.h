@@ -187,8 +187,8 @@ struct debug_capture_msg {
 static __always_inline void cilium_dbg_capture2(struct __ctx_buff *ctx, __u8 type,
 						__u32 arg1, __u32 arg2)
 {
-	__u64 ctx_len = (__u64)ctx_full_len(ctx);
-	__u64 cap_len = min((__u64)TRACE_PAYLOAD_LEN, (__u64)ctx_len);
+	__u64 ctx_len = ctx_full_len(ctx);
+	__u64 cap_len = min_t(__u64, TRACE_PAYLOAD_LEN, ctx_len);
 	__u32 hash = get_hash_recalc(ctx);
 	struct debug_capture_msg msg = {
 		.type = CILIUM_NOTIFY_DBG_CAPTURE,

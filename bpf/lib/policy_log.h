@@ -47,30 +47,31 @@ send_policy_verdict_notify(struct __ctx_buff *ctx, __u32 remote_label, __u16 dst
 			   __u8 proto, __u8 dir, __u8 is_ipv6, int verdict,
 			   __u8 match_type)
 {
-	if (!policy_verdict_filter_allow(POLICY_VERDICT_LOG_FILTER, dir)) {
-		return;
-	}
+	__u64 ctx_len = ctx_full_len(ctx);
+	__u64 cap_len = min_t(__u64, TRACE_PAYLOAD_LEN, ctx_len);
+	struct policy_verdict_notify msg;
 
-	__u64 ctx_len = (__u64)ctx_full_len(ctx);
-	__u64 cap_len = min((__u64)TRACE_PAYLOAD_LEN, (__u64)ctx_len);
-	__u32 hash = get_hash_recalc(ctx);
-	struct policy_verdict_notify msg = {
-		.type = CILIUM_NOTIFY_POLICY_VERDICT,
-		.source = EVENT_SOURCE,
-		.hash = hash,
-		.len_orig = ctx_len,
-		.len_cap = cap_len,
-		.version = NOTIFY_CAPTURE_VER,
-		.remote_label = remote_label,
-		.verdict = verdict,
-		.dst_port = bpf_ntohs(dst_port),
-		.proto = proto,
-		.dir = dir,
-		.ipv6 = is_ipv6,
-		.match_type = match_type,
-		.pad0 = 0,
-		.pad1 = 0,
-	};
+	if (!policy_verdict_filter_allow(POLICY_VERDICT_LOG_FILTER, dir))
+		return;
+
+	msg.type = CILIUM_NOTIFY_POLICY_VERDICT;
+	msg.version = NOTIFY_CAPTURE_VER;
+	msg.source = EVENT_SOURCE;
+
+	msg.hash = get_hash_recalc(ctx);
+	msg.len_orig = ctx_len;
+	msg.len_cap = cap_len;
+	msg.remote_label = remote_label;
+	msg.match_type = match_type;
+	msg.verdict = verdict;
+
+	msg.dst_port = bpf_ntohs(dst_port);
+	msg.proto = proto;
+	msg.dir = dir;
+	msg.ipv6 = is_ipv6;
+
+	msg.pad0 = 0;
+	msg.pad1 = 0;
 
 	ctx_event_output(ctx, &EVENTS_MAP,
 			 (cap_len << 32) | BPF_F_CURRENT_CPU,

@@ -447,6 +447,7 @@ static __always_inline __maybe_unused int snat_v4_create_dsr(struct __ctx_buff *
 		__be16 dport;
 	} l4hdr;
 	__u32 off;
+	int ret;
 
 	build_bug_on(sizeof(struct ipv4_nat_entry) > 64);
 
@@ -457,7 +458,9 @@ static __always_inline __maybe_unused int snat_v4_create_dsr(struct __ctx_buff *
 	tuple.daddr = ip4->saddr;
 	tuple.saddr = ip4->daddr;
 	tuple.flags = NAT_DIR_EGRESS;
+
 	off = ((void *)ip4 - data) + ipv4_hdrlen(ip4);
+
 	switch (tuple.nexthdr) {
 	case IPPROTO_TCP:
 	case IPPROTO_UDP:
@@ -467,8 +470,9 @@ static __always_inline __maybe_unused int snat_v4_create_dsr(struct __ctx_buff *
 		tuple.sport = l4hdr.dport;
 		break;
 	default:
-		// NodePort svc can be reached only via TCP or UDP, so
-		// drop the rest
+		/* NodePort svc can be reached only via TCP or UDP, so
+		 * drop the rest.
+		 */
 		return DROP_NAT_UNSUPP_PROTO;
 	}
 
@@ -476,7 +480,7 @@ static __always_inline __maybe_unused int snat_v4_create_dsr(struct __ctx_buff *
 	state.to_saddr = to_saddr;
 	state.to_sport = to_sport;
 
-	int ret = map_update_elem(&SNAT_MAPPING_IPV4, &tuple, &state, 0);
+	ret = map_update_elem(&SNAT_MAPPING_IPV4, &tuple, &state, 0);
 	if (ret)
 		return ret;
 
@@ -903,8 +907,8 @@ static __always_inline __maybe_unused int snat_v6_create_dsr(struct __ctx_buff *
 		__be16 sport;
 		__be16 dport;
 	} l4hdr;
+	int ret, hdrlen;
 	__u32 off;
-	int hdrlen;
 
 	build_bug_on(sizeof(struct ipv6_nat_entry) > 64);
 
@@ -919,7 +923,9 @@ static __always_inline __maybe_unused int snat_v6_create_dsr(struct __ctx_buff *
 	ipv6_addr_copy(&tuple.daddr, (union v6addr *)&ip6->saddr);
 	ipv6_addr_copy(&tuple.saddr, (union v6addr *)&ip6->daddr);
 	tuple.flags = NAT_DIR_EGRESS;
+
 	off = ((void *)ip6 - data) + hdrlen;
+
 	switch (tuple.nexthdr) {
 	case IPPROTO_TCP:
 	case IPPROTO_UDP:
@@ -929,8 +935,9 @@ static __always_inline __maybe_unused int snat_v6_create_dsr(struct __ctx_buff *
 		tuple.sport = l4hdr.dport;
 		break;
 	default:
-		// NodePort svc can be reached only via TCP or UDP, so
-		// drop the rest
+		/* NodePort svc can be reached only via TCP or UDP, so
+		 * drop the rest.
+		 */
 		return DROP_NAT_UNSUPP_PROTO;
 	}
 
@@ -938,7 +945,7 @@ static __always_inline __maybe_unused int snat_v6_create_dsr(struct __ctx_buff *
 	ipv6_addr_copy(&state.to_saddr, to_saddr);
 	state.to_sport = to_sport;
 
-	int ret = map_update_elem(&SNAT_MAPPING_IPV6, &tuple, &state, 0);
+	ret = map_update_elem(&SNAT_MAPPING_IPV6, &tuple, &state, 0);
 	if (ret)
 		return ret;
 

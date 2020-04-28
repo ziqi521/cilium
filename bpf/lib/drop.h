@@ -32,8 +32,8 @@ struct drop_notify {
 __section_tail(CILIUM_MAP_CALLS, CILIUM_CALL_DROP_NOTIFY)
 int __send_drop_notify(struct __ctx_buff *ctx)
 {
-	__u64 ctx_len = (__u64)ctx_full_len(ctx);
-	__u64 cap_len = min((__u64)TRACE_PAYLOAD_LEN, (__u64)ctx_len);
+	__u64 ctx_len = ctx_full_len(ctx);
+	__u64 cap_len = min_t(__u64, TRACE_PAYLOAD_LEN, ctx_len);
 	__u32 hash = get_hash_recalc(ctx);
 	struct drop_notify msg = {
 		.type = CILIUM_NOTIFY_DROP,
