@@ -151,6 +151,14 @@ var (
 	}
 )
 
+// NativeRoutingEnabled returns true when native routing is enabled for a
+// particular CNI_INTEGRATION
+func NativeRoutingEnabled() bool {
+	tunnelDisabled := HelmOverride("global.tunnel") == "disabled"
+	gkeEnabled := HelmOverride("global.gke.enabled") == "true"
+	return tunnelDisabled || gkeEnabled
+}
+
 func init() {
 	// Copy over envronment variables that are passed in.
 	for envVar, helmVar := range map[string]string{
