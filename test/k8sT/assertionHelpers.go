@@ -114,19 +114,7 @@ func RedeployCilium(vm *helpers.Kubectl, ciliumFilename string, options map[stri
 func DeployCiliumOptionsAndDNS(vm *helpers.Kubectl, ciliumFilename string, options map[string]string) {
 	redeployCilium(vm, ciliumFilename, options)
 
-	By("Installing DNS Deployment")
-	switch helpers.GetCurrentIntegration() {
-	case helpers.CIIntegrationMicrok8s:
-		By(fmt.Sprintf("%s (hint: %s)",
-			"Assuming that microk8s already has DNS deployed...",
-			"Use 'microk8s.enable dns' to create deployment"))
-	default:
-		vm.ApplyDefault(helpers.DNSDeployment(vm.BasePath()))
-		By("Restarting DNS Pods")
-		if res := vm.DeleteResource("pod", fmt.Sprintf("-n %s -l k8s-app=kube-dns", helpers.KubeSystemNamespace)); !res.WasSuccessful() {
-			log.Warningf("Unable to delete DNS pods: %s", res.OutputPrettyPrint())
-		}
-	}
+	vm.RedeployKubernetesDnsIfNecessary()
 
 	switch helpers.GetCurrentIntegration() {
 	case helpers.CIIntegrationFlannel:
@@ -137,7 +125,6 @@ func DeployCiliumOptionsAndDNS(vm *helpers.Kubectl, ciliumFilename string, optio
 
 	ExpectCiliumReady(vm)
 	ExpectCiliumOperatorReady(vm)
-	ExpectKubeDNSReady(vm)
 }
 
 // SkipIfBenchmark will skip the test if benchmark is not specified
