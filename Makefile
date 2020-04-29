@@ -226,6 +226,7 @@ docker-image-no-clean: GIT_VERSION
 		--build-arg LOCKDEBUG=${LOCKDEBUG} \
 		--build-arg V=${V} \
 		--build-arg LIBNETWORK_PLUGIN=${LIBNETWORK_PLUGIN} \
+		--build-arg CILIUM_SHA=$(firstword $(GIT_VERSION)) \
 		-t "cilium/cilium:$(DOCKER_IMAGE_TAG)" .
 	$(CONTAINER_ENGINE_FULL) tag cilium/cilium:$(DOCKER_IMAGE_TAG) cilium/cilium:$(DOCKER_IMAGE_TAG)-${GOARCH}
 	$(QUIET)echo "Push like this when ready:"
@@ -250,7 +251,11 @@ docker-cilium-dev-manifest:
 	$(QUIET) contrib/scripts/push_manifest.sh cilium-dev $(DOCKER_IMAGE_TAG)
 
 docker-operator-image: GIT_VERSION
-	$(CONTAINER_ENGINE_FULL) build --build-arg LOCKDEBUG=${LOCKDEBUG} -f cilium-operator.Dockerfile -t "cilium/operator:$(DOCKER_IMAGE_TAG)" .
+	$(CONTAINER_ENGINE_FULL) build \
+		--build-arg LOCKDEBUG=${LOCKDEBUG} \
+		--build-arg CILIUM_SHA=$(firstword $(GIT_VERSION)) \
+		-f cilium-operator.Dockerfile \
+		-t "cilium/operator:$(DOCKER_IMAGE_TAG)" .
 	$(CONTAINER_ENGINE_FULL) tag cilium/operator:$(DOCKER_IMAGE_TAG) cilium/operator:$(DOCKER_IMAGE_TAG)-${GOARCH}
 	$(QUIET)echo "Push like this when ready:"
 	$(QUIET)echo "docker push cilium/operator:$(DOCKER_IMAGE_TAG)-${GOARCH}"
@@ -260,7 +265,11 @@ docker-operator-manifest:
 	$(QUIET) contrib/scripts/push_manifest.sh operator $(DOCKER_IMAGE_TAG)
 
 docker-plugin-image: GIT_VERSION
-	$(CONTAINER_ENGINE_FULL) build --build-arg LOCKDEBUG=${LOCKDEUBG} -f cilium-docker-plugin.Dockerfile -t "cilium/docker-plugin:$(DOCKER_IMAGE_TAG)" .
+	$(CONTAINER_ENGINE_FULL) build \
+		--build-arg LOCKDEBUG=${LOCKDEUBG} \
+		--build-arg CILIUM_SHA=$(firstword $(GIT_VERSION)) \
+		-f cilium-docker-plugin.Dockerfile \
+		-t "cilium/docker-plugin:$(DOCKER_IMAGE_TAG)" .
 	$(CONTAINER_ENGINE_FULL) tag cilium/docker-plugin:$(DOCKER_IMAGE_TAG) cilium/docker-plugin:$(DOCKER_IMAGE_TAG)-${GOARCH}
 	$(QUIET)echo "Push like this when ready:"
 	$(QUIET)echo "docker push cilium/docker-plugin:$(DOCKER_IMAGE_TAG)-${GOARCH}"
