@@ -30,3 +30,7 @@ func Test(t *testing.T) {
 type FQDNTestSuite struct{}
 
 var _ = Suite(&FQDNTestSuite{})
+
+func (e *FQDNTestSuite) SetUpTest(c *C) {
+	kvstore.SetupDummy("etcd")
+}

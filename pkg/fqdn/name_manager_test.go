@@ -22,11 +22,25 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cilium/cilium/pkg/identity"
+	"github.com/cilium/cilium/pkg/labels"
+	"github.com/cilium/cilium/pkg/lock"
 	"github.com/cilium/cilium/pkg/policy/api"
 	"github.com/miekg/dns"
 
 	. "gopkg.in/check.v1"
 )
+
+func setupTestAllocator() {
+	owner := newDummyOwner()
+	identity.InitWellKnownIdentities(&fakeConfig.Config{})
+	// The nils are only used by k8s CRD identities. We default to kvstore.
+	mgr := NewCachingIdentityAllocator(owner)
+	<-mgr.InitIdentityAllocator(nil, nil)
+	defer mgr.Close()
+	defer mgr.IdentityAllocator.DeleteAllKeys()
+
+}
 
 // force a fail if something calls this function
 func lookupFail(c *C, dnsNames []string) (DNSIPs map[string]*DNSIPRecords, errorDNSNames map[string]error) {
@@ -168,4 +182,68 @@ func (ds *FQDNTestSuite) TestNameManagerMultiIPUpdate(c *C) {
 	c.Assert(exists, Equals, false)
 	nameManager.Unlock()
 
+}
+
+// IdentityCache is a cache of identity to labels mapping
+type IdentityCache map[identity.NumericIdentity]labels.LabelArray
+
+type dummyOwner struct {
+	updated chan identity.NumericIdentity
+	mutex   lock.Mutex
+	cache   IdentityCache
+}
+
+func newDummyOwner() *dummyOwner {
+	return &dummyOwner{
+		cache:   IdentityCache{},
+		updated: make(chan identity.NumericIdentity, 1024),
+	}
+}
+
+func (d *dummyOwner) UpdateIdentities(added, deleted IdentityCache) {
+	d.mutex.Lock()
+	log.Debugf("Dummy UpdateIdentities(added: %v, deleted: %v)", added, deleted)
+	for id, lbls := range added {
+		d.cache[id] = lbls
+		d.updated <- id
+	}
+	for id := range deleted {
+		delete(d.cache, id)
+		d.updated <- id
+	}
+	d.mutex.Unlock()
+}
+
+func (d *dummyOwner) GetIdentity(id identity.NumericIdentity) labels.LabelArray {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	return d.cache[id]
+}
+
+func (d *dummyOwner) GetNodeSuffix() string {
+	return "foo"
+}
+
+// WaitUntilID waits until an update event is received for the
+// 'target' identity and returns the number of events processed to get
+// there. Returns 0 in case of 'd.updated' channel is closed or
+// nothing is received from that channel in 60 seconds.
+func (d *dummyOwner) WaitUntilID(target identity.NumericIdentity) int {
+	rounds := 0
+	for {
+		select {
+		case nid, ok := <-d.updated:
+			if !ok {
+				// updates channel closed
+				return 0
+			}
+			rounds++
+			if nid == target {
+				return rounds
+			}
+		case <-time.After(60 * time.Second):
+			// Timed out waiting for KV-store events
+			return 0
+		}
+	}
 }
