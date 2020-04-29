@@ -205,6 +205,43 @@ func (res *CmdRes) Filter(filter string) (*FilterBuffer, error) {
 	return &FilterBuffer{result}, nil
 }
 
+// FilterLines works like Filter, but applies the JSONPath filter to each line
+// separately and returns returns a FilterBuffer for each line. An error is
+// returned only for the first line which cannot be unmarshalled.
+func (res *CmdRes) FilterLines(filter string) ([]FilterBuffer, error) {
+	parser := jsonpath.New("").AllowMissingKeys(true)
+	err := parser.Parse(filter)
+	if err != nil {
+		return nil, err
+	}
+
+	lines := res.ByLines()
+	results := make([]FilterBuffer, 0, len(lines))
+	for i, line := range lines {
+		if len(line) == 0 {
+			continue
+		}
+
+		var data interface{}
+		result := new(bytes.Buffer)
+		err = json.Unmarshal([]byte(line), &data)
+		if err != nil {
+			if err != nil {
+				return nil, fmt.Errorf("could not parse %q as JSON (line %d of %q)",
+					line, i, res.cmd)
+			}
+		}
+
+		err = parser.Execute(result, data)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, FilterBuffer{result})
+	}
+
+	return results, nil
+}
+
 // ByLines returns res's stdout split by the newline character and, if the stdout
 // contains `\r\n`, it will be split by carriage return and new line characters.
 func (res *CmdRes) ByLines() []string {
@@ -315,6 +352,70 @@ func (res *CmdRes) WaitUntilMatchRegexp(expr string, timeout time.Duration) erro
 		body,
 		fmt.Sprintf("The output doesn't match regexp %q after timeout", expr),
 		&TimeoutConfig{Timeout: timeout})
+}
+
+// WaitUntilMatchFilterLineTimeout applies the JSONPath 'filter' to each line of
+// `CmdRes.stdout` and waits until a line matches the 'expected' output.
+// If the 'timeout' is reached it will return an error.
+func (res *CmdRes) WaitUntilMatchFilterLineTimeout(filter, expected string, timeout time.Duration) error {
+	parser := jsonpath.New("").AllowMissingKeys(true)
+	err := parser.Parse(filter)
+	if err != nil {
+		return err
+	}
+
+	errChan := make(chan error, 1)
+	body := func() bool {
+		lines := res.ByLines()
+		for i, line := range lines {
+			if len(line) == 0 {
+				continue
+			}
+
+			var data interface{}
+			err := json.Unmarshal([]byte(line), &data)
+			if err != nil {
+				errChan <- fmt.Errorf("failed to parse line %d as JSON: %s", i, err)
+				return true
+			}
+
+			result := new(bytes.Buffer)
+			err = parser.Execute(result, data)
+			if err != nil {
+				errChan <- fmt.Errorf("failed to apply JSONPath to line %d: %s", i, err)
+				return true
+			}
+
+			if result.String() == expected {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	err = WithTimeout(
+		body,
+		fmt.Sprintf("Expected string %q is not in the filter output of %q after timeout", expected, filter),
+		&TimeoutConfig{Timeout: timeout})
+	if err != nil {
+		return err
+	}
+
+	select {
+	case parseErr := <-errChan:
+		return parseErr
+	default:
+	}
+
+	return nil
+}
+
+// WaitUntilMatchFilterLineTimeout applies the JSONPath 'filter' to each line of
+// `CmdRes.stdout` and waits until a line matches the 'expected' output.
+// If helpers.HelperTimout is reached it will return an error.
+func (res *CmdRes) WaitUntilMatchFilterLine(filter, expected string) error {
+	return res.WaitUntilMatchFilterLineTimeout(filter, expected, HelperTimeout)
 }
 
 // WaitUntilFinish waits until the command context completes correctly
