@@ -22,6 +22,8 @@ import (
 
 	flowpb "github.com/cilium/cilium/api/v1/flow"
 	observerpb "github.com/cilium/cilium/api/v1/observer"
+	v1 "github.com/cilium/cilium/pkg/hubble/api/v1"
+	"github.com/cilium/cilium/pkg/hubble/container"
 	"github.com/cilium/cilium/pkg/hubble/logger"
 	"github.com/cilium/cilium/pkg/hubble/observer/observeroption"
 	"github.com/cilium/cilium/pkg/hubble/parser"
@@ -297,4 +299,17 @@ func TestLocalObserverServer_OnGetFlows(t *testing.T) {
 	// This should be assert.Equals(t, flowsReceived, numFlows)
 	// A bug in the ring buffer prevents this from succeeding
 	assert.Greater(t, flowsReceived, 0)
+}
+
+func TestLocalObserverServer_newRingReader(t *testing.T) {
+	ring := container.NewRing(3)
+	// request flows starting from timestamp zero
+	req := observerpb.GetFlowsRequest{Since: &timestamp.Timestamp{Seconds: 0}}
+
+	// write events in a loop, starting from timestamp one. reader.Next() should never return nil.
+	for i := 0; i < int(ring.Cap()); i++ {
+		ring.Write(&v1.Event{Timestamp: &timestamp.Timestamp{Seconds: int64(i + 1)}})
+		reader, _ := newRingReader(ring, &req, nil, nil)
+		assert.NotNil(t, reader.Next(), i)
+	}
 }
